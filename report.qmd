@@ -1,0 +1,405 @@
+---
+title: "What Drives NFL Game Outcomes?"
+subtitle: "Opponent-adjusted team ratings and pre-game regression, 2010–2026"
+author: "Noah Olivieri"
+date: today
+format:
+  html:
+    embed-resources: true
+    toc: true
+    toc-depth: 2
+    code-fold: true
+    code-summary: "Show code"
+    theme: cosmo
+    fig-width: 8
+    fig-height: 4.5
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+```{r setup}
+#| include: false
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(tidyr)
+  library(ggplot2)
+})
+for (f in list.files("R", pattern = "\\.R$", full.names = TRUE)) source(f)
+res <- readRDS("data/cache/results.rds")
+
+# Categorical palette, fixed order (validated: CVD-safe, labels required).
+pal <- c("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4")
+ink <- "#0b0b0b"; ink2 <- "#52514e"; grid_col <- "#e8e7e3"
+
+model_labels <- c(
+  base = "Home field only",
+  full_rolling = "Full model, rolling ratings",
+  full_ridge = "Full model, ridge ratings",
+  market = "Full model + spread",
+  spread_only = "Closing spread alone"
+)
+model_cols <- setNames(pal, names(model_labels))
+
+var_labels <- c(
+  pass_off_diff = "Pass offense rating",
+  rush_off_diff = "Rush offense rating",
+  pass_def_diff = "Pass defense rating",
+  rush_def_diff = "Rush defense rating",
+  home = "Home field",
+  rest_diff = "Rest-day difference",
+  home_off_bye = "Home team off bye",
+  away_off_bye = "Away team off bye",
+  home_short_week = "Home team short week",
+  away_short_week = "Away team short week",
+  away_travel_miles = "Away travel miles",
+  tz_crossed = "Time zones crossed",
+  div_game = "Divisional game",
+  primetime = "Primetime",
+  home_qb_changed = "Home QB changed",
+  away_qb_changed = "Away QB changed",
+  home_qb_backup = "Home QB is backup",
+  away_qb_backup = "Away QB is backup",
+  dome = "Dome / closed roof",
+  temp = "Temperature",
+  wind = "Wind",
+  turf = "Artificial turf",
+  spread = "Closing spread",
+  strength = "Team strength (4 ratings)",
+  situational = "Situational (10 variables)",
+  qb = "QB status (4 variables)",
+  environment = "Environment (4 variables)"
+)
+lab <- function(x) unname(ifelse(x %in% names(var_labels), var_labels[x], x))
+
+theme_report <- function() {
+  theme_minimal(base_size = 12) +
+    theme(
+      text = element_text(colour = ink),
+      axis.text = element_text(colour = ink2),
+      axis.title = element_text(colour = ink2, size = 10),
+      panel.grid.major = element_line(colour = grid_col, linewidth = 0.4),
+      panel.grid.minor = element_blank(),
+      plot.title = element_text(face = "bold", size = 13),
+      plot.subtitle = element_text(colour = ink2, size = 10),
+      legend.position = "top",
+      legend.title = element_blank(),
+      legend.text = element_text(colour = ink2)
+    )
+}
+
+kable <- function(df, digits = 3) knitr::kable(df, digits = digits, format.args = list(big.mark = ","))
+partial_label <- function(s) ifelse(s == 2026, "2026 (partial)", as.character(s))
+```
+
+<!--
+Report text written by Claude is limited to describing the method and what each
+chart shows. Interpretation sections marked NOAH are Noah's to write.
+-->
+
+## 1. Question and data
+
+The question: which pre-game variables best predict NFL game outcomes, and why?
+Outcomes are modeled two ways: **point margin** (home score minus away score) with
+linear regression, and **win/loss** with logistic regression (ties count as half a
+win). Every variable is known before kickoff.
+
+Data come from nflverse via `nflreadr`: play-by-play for team ratings and schedules
+for game-level variables. The 2009 season is loaded only so 2010's week 1 ratings
+have a prior season to carry over from. The 2026 season is included through the
+games completed when the pipeline last ran.
+
+```{r data-table}
+res$n_games |>
+  mutate(season = partial_label(season)) |>
+  pivot_wider(names_from = season, values_from = games) |>
+  kable()
+```
+
+Games dropped for missing features: **`r res$dropped`**. Games whose outdoor weather
+was not recorded (mostly retractable roofs left open) get the stadium's median
+temperature and wind for that season, then its median across all seasons.
+
+<!-- NOAH: your interpretation here -->
+
+## 2. How team strength is calculated
+
+Each week, before that week's games, one weighted ridge regression is fit on every
+run and pass play from the current and previous season:
+
+> play EPA = offense strength + defense strength + home-field
+
+That gives each team four ratings: pass offense, rush offense, pass defense, and
+rush defense. Defense is signed so higher is better. Because every play involves
+both an offense and a defense, each rating is already adjusted for the opponent.
+Plays are down-weighted by age (a half-life in weeks); last season's plays get extra
+decay for the offseason, which produces the preseason carryover. Plays in garbage
+time (win probability below 5% or above 95%) count at a quarter weight.
+
+The half-life, offseason decay, and ridge penalty were chosen using 2010–2017 only,
+by how well each week's ratings explained that week's margins:
+
+```{r tuning}
+best <- res$tuning$best
+tibble(
+  Setting = c("Half-life (weeks)", "Offseason decay (weeks)", "Ridge penalty (lambda)",
+              "Garbage-time weight"),
+  Value = c(best$half_life, best$offseason_weeks, best$lambda, best$garbage_weight)
+) |> kable(digits = 4)
+```
+
+The baseline uses each team's plain mean EPA/play over its last 8 games, with no
+opponent adjustment. Both rating methods feed the same full model:
+
+```{r ridge-vs-rolling}
+res$scores |>
+  filter(model %in% c("full_ridge", "full_rolling")) |>
+  group_by(Model = model_labels[model]) |>
+  summarise(`Margin RMSE` = mean(rmse), `Log loss` = mean(log_loss),
+            `Win accuracy` = mean(accuracy), `Seasons` = n()) |>
+  kable()
+```
+
+The latest ratings (the week after the most recent completed games):
+
+```{r latest-ratings}
+latest <- res$ratings_ridge |>
+  filter(season == max(season)) |>
+  filter(week == max(week))
+latest |>
+  mutate(Overall = pass_off + rush_off + pass_def + rush_def) |>
+  arrange(desc(Overall)) |>
+  transmute(Team = team, `Pass off` = pass_off, `Rush off` = rush_off,
+            `Pass def` = pass_def, `Rush def` = rush_def, Overall) |>
+  kable()
+```
+
+<!-- NOAH: your interpretation here -->
+
+## 3. Effect sizes
+
+Coefficients from the margin model fit on 2010–2025. Numeric variables are
+standardized, so each bar reads as **points of margin per 1 standard deviation**.
+Binary flags (yes/no) read as points when the flag is on. Lines show 95% confidence
+intervals; a line crossing zero means the effect isn't distinguishable from noise.
+
+The two kinds of variable are on different scales, so each gets its own panel.
+
+```{r coefficients, fig.height=7.5}
+cf <- res$coefs |>
+  filter(model == "margin", term != "(Intercept)") |>
+  mutate(label = lab(term),
+         kind = factor(ifelse(term %in% BINARY_FEATURES, "Yes/no flags: points when on",
+                              "Numeric: points per 1 SD"),
+                       levels = c("Numeric: points per 1 SD", "Yes/no flags: points when on")),
+         label = reorder(label, estimate))
+ggplot(cf, aes(x = estimate, y = label)) +
+  geom_vline(xintercept = 0, colour = ink2, linewidth = 0.4) +
+  geom_linerange(aes(xmin = conf_low, xmax = conf_high), colour = pal[1], linewidth = 2) +
+  geom_point(colour = pal[1], size = 3) +
+  facet_wrap(~kind, ncol = 1, scales = "free") +
+  labs(title = "Margin model coefficients",
+       subtitle = "Points of home margin; 95% confidence intervals",
+       x = "Points", y = NULL) +
+  theme_report() +
+  theme(strip.text = element_text(face = "bold", hjust = 0, colour = ink))
+```
+
+```{r home-edge}
+#| include: false
+# Predicted home margin for evenly matched teams at a true home game, with every
+# other variable at its 2010-2025 average. Numeric variables are standardized, so
+# "average" is 0; binary flags take their average share; strength diffs are 0.
+b <- res$coefs |> filter(model == "margin")
+coef_of <- function(t) b$estimate[b$term == t]
+train <- res$features_ridge |> filter(season <= 2025)
+flags <- setdiff(intersect(BINARY_FEATURES, b$term), "home")
+z_strength <- sapply(FEATURE_GROUPS$strength, function(v) (0 - mean(train[[v]])) / sd(train[[v]]))
+home_edge <- coef_of("(Intercept)") + coef_of("home") +
+  sum(sapply(flags, function(v) coef_of(v) * mean(train[[v]]))) +
+  sum(sapply(FEATURE_GROUPS$strength, function(v) coef_of(v) * z_strength[[v]]))
+raw_home <- mean(train$margin[train$home == 1])
+```
+
+**Home-field advantage:** almost every game is a true home game, so the "Home field"
+coefficient only measures the difference between a true home game and a neutral
+site, which is why its interval is wide. The useful number is the model's
+prediction for two evenly matched teams at a true home game, with every other
+variable at its average: **the home team by `r sprintf("%.1f", home_edge)` points**.
+For comparison, the raw average home margin in 2010–2025 was
+`r sprintf("%.1f", raw_home)` points.
+
+The two short-week flags have very wide intervals because they almost always occur
+together: on Thursday games both teams are usually on short rest, so the model can't
+tell the two apart.
+
+```{r coefficients-table}
+cf |>
+  arrange(desc(abs(estimate))) |>
+  transmute(Variable = as.character(label), Estimate = estimate,
+            `95% low` = conf_low, `95% high` = conf_high) |>
+  kable()
+```
+
+<!-- NOAH: your interpretation here -->
+
+## 4. Walk-forward accuracy
+
+For each test season, every model is trained only on earlier seasons (starting in
+2010) and then predicts that season. Lower is better for both metrics. The closing
+spread is the market's prediction and the real benchmark to beat.
+
+```{r accuracy, fig.height=5}
+sc <- res$scores |>
+  mutate(Model = factor(model_labels[model], levels = model_labels))
+end_labels <- sc |> group_by(Model) |> filter(season == max(season))
+
+accuracy_plot <- function(metric, title, ylab) {
+  ggplot(sc, aes(season, .data[[metric]], colour = Model)) +
+    geom_line(linewidth = 1) +
+    geom_point(size = 2.5) +
+    ggrepel::geom_text_repel(data = end_labels, aes(label = Model), size = 3, colour = ink2,
+                             direction = "y", hjust = 0, nudge_x = 0.25, segment.colour = grid_col,
+                             min.segment.length = 0, box.padding = 0.15, show.legend = FALSE) +
+    scale_colour_manual(values = setNames(model_cols, model_labels)) +
+    scale_x_continuous(breaks = unique(sc$season), labels = partial_label(unique(sc$season)),
+                       expand = expansion(mult = c(0.03, 0.4))) +
+    labs(title = title, x = NULL, y = ylab) +
+    theme_report() +
+    theme(legend.position = "none")
+}
+accuracy_plot("rmse", "Margin error by test season", "RMSE (points)")
+accuracy_plot("log_loss", "Win-probability error by test season", "Log loss")
+```
+
+```{r accuracy-table}
+sc |>
+  group_by(Model) |>
+  summarise(`Margin RMSE` = mean(rmse), MAE = mean(mae), `Log loss` = mean(log_loss),
+            Brier = mean(brier), `Win accuracy` = mean(accuracy)) |>
+  kable()
+```
+
+Averages above are across test seasons 2018–2026; 2026 is a partial season.
+
+<!-- NOAH: your interpretation here -->
+
+## 5. Calibration
+
+When the full model (ridge ratings) says a team wins 70% of the time, does it? Each
+point is a bin of predictions from every test season; points on the dashed line
+mean the probabilities can be taken at face value. Point size shows how many games
+are in the bin.
+
+```{r calibration, fig.height=5, fig.width=5.5}
+ggplot(res$calibration, aes(mean_pred, actual_rate)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = ink2) +
+  geom_point(aes(size = n), colour = pal[1]) +
+  scale_size_area(max_size = 8, name = "Games") +
+  coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
+  labs(title = "Calibration: full model, ridge ratings",
+       x = "Predicted home win probability", y = "Actual home win rate") +
+  theme_report() +
+  theme(legend.position = "right", legend.title = element_text(colour = ink2, size = 9))
+```
+
+```{r calibration-table}
+res$calibration |>
+  transmute(Bin = bin, `Mean predicted` = mean_pred, `Actual win rate` = actual_rate, Games = n) |>
+  kable()
+```
+
+<!-- NOAH: your interpretation here -->
+
+## 6. What matters: ablation
+
+Each bar shows how much worse the walk-forward margin error gets when a group (or a
+single variable) is removed from the full model, averaged over the test seasons.
+Bigger bars mean the variable carries more predictive value. Negative bars mean the
+model did *better* without it. The label shows in how many seasons removing it
+hurt; a variable that helps in only a few seasons probably isn't real.
+
+```{r ablation-plot-fn}
+ablation_plot <- function(abl, title) {
+  s <- summarize_ablation(abl) |>
+    mutate(label = reorder(lab(dropped), mean_d_rmse),
+           helps = ifelse(mean_d_rmse > 0, "Removing it hurts", "Removing it helps"),
+           seasons_txt = paste0(seasons_hurt, "/", n_seasons))
+  ggplot(s, aes(mean_d_rmse, label, fill = helps)) +
+    geom_col(width = 0.7) +
+    geom_vline(xintercept = 0, colour = ink2, linewidth = 0.4) +
+    geom_text(aes(label = seasons_txt,
+                  hjust = ifelse(mean_d_rmse >= 0, -0.15, 1.15)),
+              size = 3, colour = ink2) +
+    scale_fill_manual(values = c("Removing it hurts" = pal[1], "Removing it helps" = pal[2]),
+                      breaks = c("Removing it hurts", "Removing it helps")) +
+    scale_x_continuous(expand = expansion(mult = 0.18)) +
+    labs(title = title, subtitle = "Label = seasons where removing it hurt",
+         x = "Increase in margin RMSE when removed (points)", y = NULL) +
+    theme_report()
+}
+ablation_table <- function(abl) {
+  summarize_ablation(abl) |>
+    transmute(Removed = lab(dropped), `Δ RMSE` = mean_d_rmse, `Δ log loss` = mean_d_log_loss,
+              `Seasons hurt` = paste0(seasons_hurt, "/", n_seasons)) |>
+    kable(digits = 4)
+}
+```
+
+### By group
+
+```{r ablation-groups, fig.height=3.2}
+ablation_plot(res$ablation_groups, "Variable groups")
+ablation_table(res$ablation_groups)
+```
+
+### By variable
+
+```{r ablation-vars, fig.height=7}
+ablation_plot(res$ablation_vars, "Individual variables")
+ablation_table(res$ablation_vars)
+```
+
+<!-- NOAH: your interpretation here -->
+
+## 7. After the market
+
+The same drop-one test, run on the model that already includes the closing spread.
+This asks which variables still add predictive value once the market's opinion is
+known, which is the question that matters for beating Kalshi and Polymarket prices.
+
+```{r ablation-market, fig.height=7.5}
+ablation_plot(res$ablation_market_vars, "Variables, given the closing spread")
+ablation_table(res$ablation_market_vars)
+```
+
+<!-- NOAH: your interpretation here -->
+
+## 8. Caveats and next steps
+
+**Caveats**
+
+- **Starting QB is the actual starter.** The schedule records who started, which is
+  usually known before kickoff, but a surprise game-day scratch leaks a little
+  information the model wouldn't have had.
+- **"Backup QB"** means the starter isn't the team's most common starter over its
+  previous 8 games. A new starter counts as a backup for his first few games, even
+  if the change was planned (for example, a rookie named the week 1 starter).
+- **Weather for open retractable roofs** is filled from stadium medians, not
+  measured.
+- **Home and away short-week flags overlap almost completely** (both teams are on
+  short rest in nearly every Thursday game), so their individual coefficients are
+  unreliable even though their combined effect is estimable.
+- **Effects are linear with no interactions.** Curves and interactions are left for
+  the next step, where they have to earn their place in walk-forward accuracy.
+- **2026 is a partial season**, so its accuracy numbers are noisier.
+
+**Next steps**
+
+1. An xgboost check: if boosting beats this regression in walk-forward accuracy,
+   SHAP values point to the nonlinearity or interaction the linear model misses.
+2. Bring `R/team_strength.R` and `R/features.R` into the Forecast Lab, and compare
+   win probabilities against Kalshi and Polymarket prices.
+
+<!-- NOAH: your interpretation here -->
