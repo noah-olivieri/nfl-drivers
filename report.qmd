@@ -161,7 +161,9 @@ res$scores |>
   kable()
 ```
 
-The latest ratings (the week after the most recent completed games):
+The latest ratings, for the next week to be played
+(**`r max(res$ratings_ridge$season)` week
+`r max(res$ratings_ridge$week[res$ratings_ridge$season == max(res$ratings_ridge$season)])`**):
 
 ```{r latest-ratings}
 latest <- res$ratings_ridge |>

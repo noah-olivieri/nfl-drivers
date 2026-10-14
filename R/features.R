@@ -62,7 +62,10 @@ build_features <- function(sched, ratings, stadiums) {
       roof = trimws(roof), surface = trimws(surface)
     ) |>
     dplyr::left_join(st, by = "stadium_id") |>
-    dplyr::left_join(homes, by = c("season", "away_team" = "team")) |>
+    # Away team's home stadium: from this season if it has hosted yet, otherwise
+    # from the most recent season it did (needed for early-week live runs).
+    dplyr::left_join(dplyr::rename(homes, home_season = season),
+                     dplyr::join_by(away_team == team, closest(season >= home_season))) |>
     dplyr::left_join(dplyr::rename(st, away_lat = lat, away_lon = lon, away_tz = tz),
                      by = c("home_stadium_id" = "stadium_id"))
 

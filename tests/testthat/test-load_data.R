@@ -23,6 +23,29 @@ test_that("clean_schedules drops unplayed and no-contest games", {
   expect_equal(out$away_team, "LV")
 })
 
+test_that("clean_schedules can keep unplayed games so the next week gets ratings", {
+  s <- tibble::tibble(season = 2026L, week = c(5L, 6L), gameday = c("2026-10-04", "2026-10-11"),
+                      game_id = c("played", "upcoming"), home_team = c("OAK", "KC"),
+                      away_team = c("DEN", "SD"), home_score = c(20, NA), away_score = c(17, NA))
+  all_games <- clean_schedules(s, completed_only = FALSE)
+  expect_equal(all_games$game_id, c("played", "upcoming"))
+  expect_equal(all_games$away_team, c("DEN", "LAC"))
+  expect_equal(week_cutoffs(all_games)$week, c(5L, 6L))
+})
+
+test_that("rating schedule is completed games plus the next unplayed week only", {
+  s <- tibble::tibble(season = 2026L, week = c(5L, 6L, 6L, 7L),
+                      game_id = c("w5", "w6a", "w6b", "w7"),
+                      home_score = c(20, NA, NA, NA), away_score = c(17, NA, NA, NA))
+  expect_equal(rating_schedule(s)$game_id, c("w5", "w6a", "w6b"))
+})
+
+test_that("rating schedule keeps a no-contest game's week via its other games", {
+  s <- tibble::tibble(season = 2022L, week = 17L, game_id = c("buf_cin", "other"),
+                      home_score = c(NA, 24), away_score = c(NA, 21))
+  expect_equal(rating_schedule(s)$week, 17L)
+})
+
 test_that("clean_plays keeps only pass/run plays with EPA", {
   p <- tibble::tibble(season = 2020L, week = 1L, game_id = "g", game_date = "2020-09-13",
                       posteam = "KC", defteam = "HOU", home_team = "KC",

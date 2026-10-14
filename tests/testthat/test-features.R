@@ -113,6 +113,18 @@ test_that("games without ratings for their season are left out, not counted as d
   expect_equal(attr(f, "dropped"), 0)
 })
 
+test_that("week 1 of a new season uses last season's home stadium for travel", {
+  wk1 <- toy_sched()[1, ] |>
+    dplyr::mutate(game_id = "2021_wk1", season = 2021L, week = 1L, gameday = "2021-09-12",
+                  away_team = "JAX", away_qb_id = "minshew")   # JAX hasn't hosted in 2021 yet
+  s <- dplyr::bind_rows(toy_sched(), wk1)
+  r <- dplyr::bind_rows(toy_ratings(), dplyr::mutate(toy_ratings()[toy_ratings()$week == 1, ], season = 2021L))
+  f <- build_features(s, r, toy_stadiums())
+  expect_equal(attr(f, "dropped"), 0)
+  expect_equal(row_of(f, "2021_wk1")$away_travel_miles,
+               haversine_miles(30.32, -81.64, 39.05, -94.48))   # JAX00 -> KAN00
+})
+
 test_that("games missing a required feature are dropped and counted", {
   s <- toy_sched()
   s$home_rest[s$game_id == "g3"] <- NA

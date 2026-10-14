@@ -43,11 +43,23 @@ load_cached <- function(seasons, kind, cache_dir = "data/cache", refresh = 2026L
 
 clean_abbr <- function(x) nflreadr::clean_team_abbrs(x, current_location = TRUE)
 
-# Completed games only, with relocated teams under one current abbreviation.
-clean_schedules <- function(sched) {
-  sched |>
-    dplyr::filter(!is.na(home_score), !is.na(away_score)) |>
-    dplyr::mutate(home_team = clean_abbr(home_team), away_team = clean_abbr(away_team))
+# Relocated teams under one current abbreviation. By default only completed games
+# are kept; completed_only = FALSE keeps unplayed games too, so week cutoffs (and
+# ratings) exist for the week about to be played.
+clean_schedules <- function(sched, completed_only = TRUE) {
+  if (completed_only) sched <- dplyr::filter(sched, !is.na(home_score), !is.na(away_score))
+  dplyr::mutate(sched, home_team = clean_abbr(home_team), away_team = clean_abbr(away_team))
+}
+
+# Schedule rows that ratings are computed for: every completed game, plus the
+# games of the next week that has no completed games yet (the week to forecast).
+rating_schedule <- function(sched_all) {
+  done <- !is.na(sched_all$home_score) & !is.na(sched_all$away_score)
+  key <- sched_all$season * 100 + sched_all$week
+  last_done <- if (any(done)) max(key[done]) else -Inf
+  upcoming <- key[!done & key > last_done]
+  next_key <- if (length(upcoming)) min(upcoming) else NA
+  sched_all[done | (!is.na(next_key) & key == next_key), ]
 }
 
 # Normalize the team columns of a plays table to current abbreviations.

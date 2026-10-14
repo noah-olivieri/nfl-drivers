@@ -8,7 +8,9 @@ run_all <- function(cache_dir = "data/cache", refresh = 2026L,
   test_seasons <- 2018:2026
 
   step("Loading data")
-  sched <- clean_schedules(load_cached(2009:2026, "schedules", cache_dir, refresh))
+  sched_all <- clean_schedules(load_cached(2009:2026, "schedules", cache_dir, refresh),
+                               completed_only = FALSE)   # includes the upcoming week
+  sched <- dplyr::filter(sched_all, !is.na(home_score), !is.na(away_score))
   plays <- clean_plays(load_cached(2009:2026, "pbp", cache_dir, refresh))
   stadiums <- readr::read_csv(stadiums_path, show_col_types = FALSE)
 
@@ -16,8 +18,10 @@ run_all <- function(cache_dir = "data/cache", refresh = 2026L,
   tuning <- tune_rating_params(plays, sched, default_rating_grid(), seasons = 2010:2017)
 
   step("Computing ratings")
-  ratings_ridge <- compute_ridge_ratings(plays, sched, tuning$best, seasons)
-  ratings_rolling <- compute_rolling_ratings(plays, sched, seasons)
+  # Ratings cover every completed week plus the next unplayed week (the one to forecast).
+  sched_rate <- rating_schedule(sched_all)
+  ratings_ridge <- compute_ridge_ratings(plays, sched_rate, tuning$best, seasons)
+  ratings_rolling <- compute_rolling_ratings(plays, sched_rate, seasons)
 
   step("Building features")
   features_ridge <- build_features(sched, ratings_ridge, stadiums)
