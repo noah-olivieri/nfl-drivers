@@ -118,9 +118,12 @@ rating_diffs <- function(games, ratings) {
     dplyr::select(-dplyr::ends_with("_h"), -dplyr::ends_with("_a"))
 }
 
+# A first grid (half-life 3-12, offseason 8-26, lambda 1e-4 to 1e-2) put the best
+# setting on its edge (half-life 12, offseason 8; lambda barely mattered), so the
+# grid now extends toward longer memory and less offseason decay.
 default_rating_grid <- function() {
-  tidyr::expand_grid(half_life = c(3, 5, 8, 12), offseason_weeks = c(8, 16, 26),
-                     lambda = c(1e-4, 3e-4, 1e-3, 3e-3, 1e-2), garbage_weight = 0.25)
+  tidyr::expand_grid(half_life = c(8, 12, 16, 24, 32, 48), offseason_weeks = c(0, 4, 8, 16),
+                     lambda = c(1e-3, 3e-3, 1e-2), garbage_weight = 0.25)
 }
 
 # Pick rating params by how well that week's ratings explain that week's margins,
