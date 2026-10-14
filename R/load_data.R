@@ -50,11 +50,17 @@ clean_schedules <- function(sched) {
     dplyr::mutate(home_team = clean_abbr(home_team), away_team = clean_abbr(away_team))
 }
 
+# Normalize the team columns of a plays table to current abbreviations.
+clean_plays_teams <- function(df) {
+  dplyr::mutate(df, posteam = clean_abbr(posteam), defteam = clean_abbr(defteam),
+                home_team = clean_abbr(home_team))
+}
+
 # Run and pass plays with a valid EPA (drops kneels, spikes and no-play penalties).
 clean_plays <- function(pbp) {
   pbp |>
     dplyr::filter(pass == 1 | rush == 1, !is.na(epa), play_type %in% c("pass", "run")) |>
     dplyr::transmute(season, week, game_id, game_date = as.Date(game_date),
-                     posteam = clean_abbr(posteam), defteam = clean_abbr(defteam),
-                     home_team = clean_abbr(home_team), play_type, epa, wp)
+                     posteam, defteam, home_team, play_type, epa, wp) |>
+    clean_plays_teams()
 }
