@@ -26,6 +26,19 @@ test_that("a relocated team keeps one continuous identity", {
   expect_false("OAK" %in% r$team)
 })
 
+test_that("closed-form ridge matches glmnet's solution", {
+  set.seed(9)
+  n <- 3000
+  X <- Matrix::rsparsematrix(n, 20, density = 0.15, rand.x = function(k) rep(1, k))
+  y <- as.numeric(X %*% rnorm(20, 0, 0.3)) + rnorm(n)
+  w <- runif(n)
+  pf <- c(rep(1, 18), 0, 0)
+  ours <- ridge_solve(X, y, w, lambda = 0.01, penalty_factor = pf)
+  ref <- glmnet::glmnet(X, y, weights = w, alpha = 0, lambda = 0.01, standardize = FALSE,
+                        penalty.factor = pf, thresh = 1e-14)
+  expect_equal(unname(ours), unname(as.matrix(coef(ref))[, 1]), tolerance = 1e-4)
+})
+
 test_that("week cutoffs are the earliest game date of each season-week", {
   s <- tibble::tibble(season = 2020L, week = c(1L, 1L, 2L),
                       gameday = c("2020-09-10", "2020-09-13", "2020-09-17"))
