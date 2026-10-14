@@ -1,0 +1,54 @@
+stadium_id,stadium,lat,lon,tz
+ATL00,Georgia Dome,33.76,-84.40,America/New_York
+ATL97,Mercedes-Benz Stadium,33.76,-84.40,America/New_York
+BAL00,M&T Bank Stadium,39.28,-76.62,America/New_York
+BOS00,Gillette Stadium,42.09,-71.26,America/New_York
+BUF00,Highmark Stadium,42.77,-78.79,America/New_York
+BUF01,Rogers Centre,43.64,-79.39,America/Toronto
+CAR00,Bank of America Stadium,35.23,-80.85,America/New_York
+CHI98,Soldier Field,41.86,-87.62,America/Chicago
+CIN00,Paycor Stadium,39.10,-84.52,America/New_York
+CLE00,Huntington Bank Field,41.51,-81.70,America/New_York
+DAL00,AT&T Stadium,32.75,-97.09,America/Chicago
+DEN00,Empower Field at Mile High,39.74,-105.02,America/Denver
+DET00,Ford Field,42.34,-83.05,America/Detroit
+FRA00,Deutsche Bank Park,50.07,8.65,Europe/Berlin
+GER00,Allianz Arena,48.22,11.62,Europe/Berlin
+GNB00,Lambeau Field,44.50,-88.06,America/Chicago
+HOU00,NRG Stadium,29.68,-95.41,America/Chicago
+IND00,Lucas Oil Stadium,39.76,-86.16,America/Indiana/Indianapolis
+JAX00,EverBank Stadium,30.32,-81.64,America/New_York
+KAN00,GEHA Field at Arrowhead Stadium,39.05,-94.48,America/Chicago
+LAX01,SoFi Stadium,33.95,-118.34,America/Los_Angeles
+LAX97,StubHub Center,33.86,-118.26,America/Los_Angeles
+LAX99,Los Angeles Memorial Coliseum,34.01,-118.29,America/Los_Angeles
+LON00,Wembley Stadium,51.56,-0.28,Europe/London
+LON01,Twickenham Stadium,51.46,-0.34,Europe/London
+LON02,Tottenham Hotspur Stadium,51.60,-0.07,Europe/London
+MAD01,Bernabeu,40.45,-3.69,Europe/Madrid
+MEL00,Melbourne Cricket Ground,-37.82,144.98,Australia/Melbourne
+MEX00,Estadio Banorte,19.30,-99.15,America/Mexico_City
+MIA00,Hard Rock Stadium,25.96,-80.24,America/New_York
+MIN00,Hubert H. Humphrey Metrodome,44.97,-93.26,America/Chicago
+MIN01,U.S. Bank Stadium,44.97,-93.26,America/Chicago
+MIN98,TCF Bank Stadium,44.98,-93.22,America/Chicago
+MUN01,FC Bayern Munich Stadium,48.22,11.62,Europe/Berlin
+NAS00,Nissan Stadium,36.17,-86.77,America/Chicago
+NOR00,Caesars Superdome,29.95,-90.08,America/Chicago
+NYC00,Giants Stadium,40.81,-74.07,America/New_York
+NYC01,MetLife Stadium,40.81,-74.07,America/New_York
+OAK00,Oakland-Alameda County Coliseum,37.75,-122.20,America/Los_Angeles
+PAR00,Stade de France,48.92,2.36,Europe/Paris
+PHI00,Lincoln Financial Field,39.90,-75.17,America/New_York
+PHO00,State Farm Stadium,33.53,-112.26,America/Phoenix
+PIT00,Acrisure Stadium,40.45,-80.02,America/New_York
+RIO00,Maracana Stadium,-22.91,-43.23,America/Sao_Paulo
+SAO00,Arena Corinthians,-23.55,-46.47,America/Sao_Paulo
+SDG00,Qualcomm Stadium,32.78,-117.12,America/Los_Angeles
+SEA00,Lumen Field,47.60,-122.33,America/Los_Angeles
+SFO00,Candlestick Park,37.71,-122.39,America/Los_Angeles
+SFO01,Levi's Stadium,37.40,-121.97,America/Los_Angeles
+STL00,Edward Jones Dome,38.63,-90.19,America/Chicago
+TAM00,Raymond James Stadium,27.98,-82.50,America/New_York
+VEG00,Allegiant Stadium,36.09,-115.18,America/Los_Angeles
+WAS00,Northwest Stadium,38.91,-76.86,America/New_York
