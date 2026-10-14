@@ -1,0 +1,21 @@
+Package: nfldrivers
+Title: Which Pre-Game Variables Drive NFL Game Outcomes
+Version: 0.1.0
+Authors@R: person("Noah", "Olivieri", email = "283797087+noah-olivieri@users.noreply.github.com", role = c("aut", "cre"))
+Description: Opponent-adjusted team ratings, pre-game features, and walk-forward
+    regression analysis of NFL margins and win/loss. Not an installable package;
+    this file only records dependencies.
+Imports:
+    nflreadr,
+    dplyr,
+    tidyr,
+    purrr,
+    tibble,
+    readr,
+    glmnet,
+    Matrix,
+    lubridate,
+    ggplot2
+Suggests:
+    testthat (>= 3.0.0),
+    withr
