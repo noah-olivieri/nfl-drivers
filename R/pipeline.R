@@ -1,5 +1,6 @@
-# End-to-end pipeline: data -> ratings -> features -> models -> validation and
-# importance. Saves everything the report needs to <cache_dir>/results.rds.
+# End-to-end pipeline: data -> ratings -> features -> models -> validation,
+# importance and paired bootstrap. Saves everything the report needs to
+# <cache_dir>/results.rds.
 
 run_all <- function(cache_dir = "data/cache", refresh = 2026L,
                     stadiums_path = "data/stadiums.csv") {
@@ -42,12 +43,21 @@ run_all <- function(cache_dir = "data/cache", refresh = 2026L,
   step("Importance")
   full_vars <- MODEL_SPECS$full
   market_vars <- MODEL_SPECS$market
-  ablation_groups <- ablate(features_ridge, full_vars, FEATURE_GROUPS, test_seasons = test_seasons)
-  ablation_vars <- ablate(features_ridge, full_vars, as.list(stats::setNames(full_vars, full_vars)),
-                          test_seasons = test_seasons)
-  ablation_market_vars <- ablate(features_ridge, market_vars,
-                                 as.list(stats::setNames(market_vars, market_vars)),
-                                 test_seasons = test_seasons)
+  ap_groups <- ablation_preds(features_ridge, full_vars, FEATURE_GROUPS, test_seasons = test_seasons)
+  ap_vars <- ablation_preds(features_ridge, full_vars, as.list(stats::setNames(full_vars, full_vars)),
+                            test_seasons = test_seasons)
+  ap_market_vars <- ablation_preds(features_ridge, market_vars,
+                                   as.list(stats::setNames(market_vars, market_vars)),
+                                   test_seasons = test_seasons)
+
+  step("Paired bootstrap")
+  # Each pair is c(reference, challenger); positive differences mean the challenger is worse.
+  model_pairs <- list(c("spread_only", "full_ridge"), c("spread_only", "market"),
+                      c("base", "full_ridge"), c("full_ridge", "full_rolling"))
+  model_comparisons <- compare_models(preds, model_pairs)
+  ablation_groups_boot <- ablation_bootstrap(ap_groups)
+  ablation_vars_boot <- ablation_bootstrap(ap_vars)
+  ablation_market_vars_boot <- ablation_bootstrap(ap_market_vars)
 
   results <- list(
     created = Sys.time(),
@@ -61,9 +71,13 @@ run_all <- function(cache_dir = "data/cache", refresh = 2026L,
     preds = preds,
     scores = scores,
     calibration = calibration_table(preds$full_ridge),
-    ablation_groups = ablation_groups,
-    ablation_vars = ablation_vars,
-    ablation_market_vars = ablation_market_vars,
+    model_comparisons = model_comparisons,
+    ablation_groups = ablation_deltas(ap_groups),
+    ablation_vars = ablation_deltas(ap_vars),
+    ablation_market_vars = ablation_deltas(ap_market_vars),
+    ablation_groups_boot = ablation_groups_boot,
+    ablation_vars_boot = ablation_vars_boot,
+    ablation_market_vars_boot = ablation_market_vars_boot,
     coefs = coef_table(features_ridge, full_vars),
     coefs_market = coef_table(features_ridge, market_vars)
   )

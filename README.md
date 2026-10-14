@@ -15,7 +15,7 @@ Requires R (4.3+) and [Quarto](https://quarto.org).
 
 ```r
 install.packages(c("nflreadr", "dplyr", "tidyr", "purrr", "tibble", "readr",
-                   "Matrix", "lubridate", "ggplot2", "knitr", "rmarkdown",
+                   "Matrix", "lubridate", "ggplot2", "ggrepel", "knitr", "rmarkdown",
                    "glmnet", "testthat", "withr"))
 ```
 
@@ -49,6 +49,7 @@ the game being predicted or anything after it.
 | `R/models.R` | Margin and win/loss regressions |
 | `R/validate.R` | Walk-forward validation, scoring, spread benchmark, calibration |
 | `R/importance.R` | Ablation importance and coefficient tables |
+| `R/bootstrap.R` | Paired week-block bootstrap for comparing models |
 | `R/pipeline.R` | Runs everything and saves the results |
 | `data/stadiums.csv` | Venue coordinates and time zones |
 | `report.qmd` | The report |

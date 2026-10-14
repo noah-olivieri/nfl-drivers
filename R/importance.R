@@ -1,16 +1,33 @@
 # Importance: how much walk-forward accuracy gets worse when a variable (or a
 # group of variables) is removed, plus coefficient sizes with confidence intervals.
 
-# For each named set in drop_sets, rerun walk-forward without it and report the
-# per-season change vs. the full model. Positive = removing it hurt accuracy.
-ablate <- function(features, vars, drop_sets, ...) {
-  full <- score_predictions(walk_forward(features, vars, ...))
-  purrr::imap_dfr(drop_sets, function(drop, name) {
-    reduced <- score_predictions(walk_forward(features, setdiff(vars, drop), ...))
-    dplyr::inner_join(full, reduced, by = "season", suffix = c("_full", "_drop")) |>
+# Walk-forward predictions for the full model and for the model without each named
+# set in drop_sets. Both ablation_deltas() and ablation_bootstrap() use these.
+ablation_preds <- function(features, vars, drop_sets, ...) {
+  list(full = walk_forward(features, vars, ...),
+       reduced = purrr::map(drop_sets, function(drop) walk_forward(features, setdiff(vars, drop), ...)))
+}
+
+# Per-season change vs. the full model. Positive = removing it hurt accuracy.
+ablation_deltas <- function(ap) {
+  full <- score_predictions(ap$full)
+  purrr::imap_dfr(ap$reduced, function(preds, name) {
+    dplyr::inner_join(full, score_predictions(preds), by = "season", suffix = c("_full", "_drop")) |>
       dplyr::transmute(dropped = name, season,
                        d_rmse = rmse_drop - rmse_full,
                        d_log_loss = log_loss_drop - log_loss_full)
+  })
+}
+
+ablate <- function(features, vars, drop_sets, ...) {
+  ablation_deltas(ablation_preds(features, vars, drop_sets, ...))
+}
+
+# Paired bootstrap of each reduced model against the full model, pooled over all
+# test games. Positive = removing it hurt accuracy.
+ablation_bootstrap <- function(ap, ...) {
+  purrr::imap_dfr(ap$reduced, function(preds, name) {
+    dplyr::bind_cols(tibble::tibble(dropped = name), paired_bootstrap(ap$full, preds, ...))
   })
 }
 

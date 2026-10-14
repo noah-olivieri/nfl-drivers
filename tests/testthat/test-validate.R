@@ -1,6 +1,7 @@
 wf_data <- function() {
   set.seed(7)
-  tibble::tibble(game_id = 1:400, season = rep(2014:2021, each = 50), x = rnorm(400),
+  tibble::tibble(game_id = 1:400, season = rep(2014:2021, each = 50),
+                 week = rep(rep(1:5, each = 10), 8), x = rnorm(400),
                  home = 1, spread = rnorm(400, 2, 5)) |>
     dplyr::mutate(margin = 2 * x + rnorm(400, 0, 10), win = as.numeric(margin > 0))
 }
@@ -21,7 +22,7 @@ test_that("walk-forward never trains on the test season or later", {
 test_that("walk-forward predicts every test-season game once", {
   out <- walk_forward(wf_data(), "x", test_seasons = 2018:2021, train_start = 2014L)
   expect_equal(sort(out$game_id), 201:400)
-  expect_named(out, c("game_id", "season", "margin", "win", "pred_margin", "pred_win"))
+  expect_named(out, c("game_id", "season", "week", "margin", "win", "pred_margin", "pred_win"))
 })
 
 test_that("test seasons with no games are skipped", {
@@ -33,6 +34,7 @@ test_that("spread benchmark predicts the spread as the margin", {
   out <- spread_benchmark(wf_data(), test_seasons = 2020:2021, train_start = 2014L)
   d <- wf_data()
   expect_equal(out$pred_margin, d$spread[match(out$game_id, d$game_id)])
+  expect_equal(out$week, d$week[match(out$game_id, d$game_id)])
   expect_true(all(out$pred_win > 0 & out$pred_win < 1))
 })
 

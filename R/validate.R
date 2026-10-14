@@ -8,7 +8,7 @@ walk_forward <- function(features, vars, test_seasons = 2018:2026, train_start =
     if (nrow(test) == 0) return(NULL)
     train <- features[features$season >= train_start & features$season < y, ]
     preds <- predict_fn(fit_fn(train, vars), test)
-    dplyr::left_join(dplyr::select(test, game_id, season, margin, win), preds, by = "game_id")
+    dplyr::left_join(dplyr::select(test, game_id, season, week, margin, win), preds, by = "game_id")
   })
 }
 
@@ -20,7 +20,7 @@ spread_benchmark <- function(features, test_seasons = 2018:2026, train_start = 2
     if (nrow(test) == 0) return(NULL)
     train <- features[features$season >= train_start & features$season < y & !is.na(features$spread), ]
     fit <- stats::glm(win ~ spread, data = train, family = stats::quasibinomial())
-    dplyr::transmute(test, game_id, season, margin, win, pred_margin = spread,
+    dplyr::transmute(test, game_id, season, week, margin, win, pred_margin = spread,
                      pred_win = unname(stats::predict(fit, newdata = test, type = "response")))
   })
 }

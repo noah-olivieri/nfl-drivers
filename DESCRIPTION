@@ -15,7 +15,8 @@ Imports:
     glmnet,
     Matrix,
     lubridate,
-    ggplot2
+    ggplot2,
+    withr
 Suggests:
     testthat (>= 3.0.0),
-    withr
+    ggrepel

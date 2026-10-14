@@ -2,6 +2,7 @@ imp_data <- function() {
   set.seed(3)
   n <- 16 * 250
   f <- tibble::tibble(game_id = seq_len(n), season = rep(2010:2025, each = 250),
+                      week = rep(rep(1:10, each = 25), 16),
                       strong = rnorm(n), noise = rnorm(n), home = 1)
   f$margin <- 6 * f$strong + rnorm(n, 0, 12)
   f$win <- as.numeric(f$margin > 0)
@@ -44,4 +45,20 @@ test_that("coef_table only uses the requested seasons", {
   ct <- coef_table(f, "strong", seasons = 2010:2024)
   est <- ct$estimate[ct$model == "margin" & ct$term == "strong"]
   expect_equal(est, 6, tolerance = 0.1)
+})
+
+test_that("the ablation bootstrap flags a strong variable but not noise", {
+  ap <- ablation_preds(imp_data(), c("strong", "noise"), list(strong = "strong", noise = "noise"),
+                       test_seasons = 2018:2025)
+  b <- ablation_bootstrap(ap, n_boot = 300)
+  expect_equal(b$dropped, c("strong", "noise"))
+  expect_gt(b$d_rmse_low[b$dropped == "strong"], 0)
+  expect_true(b$d_rmse_low[b$dropped == "noise"] < 0 && b$d_rmse_high[b$dropped == "noise"] > 0)
+})
+
+test_that("ablate() gives the same per-season deltas as ablation_deltas() on shared predictions", {
+  sets <- list(noise = "noise")
+  ap <- ablation_preds(imp_data(), c("strong", "noise"), sets, test_seasons = 2024:2025)
+  expect_equal(ablation_deltas(ap),
+               ablate(imp_data(), c("strong", "noise"), sets, test_seasons = 2024:2025))
 })

@@ -91,6 +91,11 @@ theme_report <- function() {
 
 kable <- function(df, digits = 3) knitr::kable(df, digits = digits, format.args = list(big.mark = ","))
 partial_label <- function(s) ifelse(s == 2026, "2026 (partial)", as.character(s))
+# "+0.123 [-0.050, +0.290]": a bootstrap estimate with its 95% interval.
+fmt_ci <- function(est, lo, hi, digits) {
+  f <- paste0("%+.", digits, "f")
+  sprintf(paste0(f, " [", f, ", ", f, "]"), est, lo, hi)
+}
 ```
 
 <!--
@@ -285,6 +290,26 @@ sc |>
 
 Averages above are across test seasons 2018–2026; 2026 is a partial season.
 
+### Is the gap bigger than noise?
+
+Each row compares a model with a reference model on the same games. A paired
+bootstrap redraws the test set 2,000 times by resampling whole weeks (all games in a
+season-week together, since they share rating updates, weather and news), and
+rescores both models on each redraw. Positive Δ means the model is worse than the one
+it's compared with. The interval is the middle 95% of the redraws, and "share worse"
+is the fraction of redraws in which the model lost. Δ is measured over all test games
+pooled, so it can differ slightly from the gap between the season averages above.
+
+```{r model-comparisons}
+res$model_comparisons |>
+  transmute(Model = model_labels[model_b], `Compared with` = model_labels[model_a],
+            `Δ RMSE [95% interval]` = fmt_ci(d_rmse, d_rmse_low, d_rmse_high, 3),
+            `Share worse (RMSE)` = share_worse_rmse,
+            `Δ log loss [95% interval]` = fmt_ci(d_log_loss, d_log_loss_low, d_log_loss_high, 4),
+            `Share worse (log loss)` = share_worse_log_loss) |>
+  kable(digits = 2)
+```
+
 <!-- NOAH: your interpretation here -->
 
 ## 5. Calibration
@@ -317,50 +342,66 @@ res$calibration |>
 ## 6. What matters: ablation
 
 Each bar shows how much worse the walk-forward margin error gets when a group (or a
-single variable) is removed from the full model, averaged over the test seasons.
+single variable) is removed from the full model, measured over all test games pooled.
 Bigger bars mean the variable carries more predictive value. Negative bars mean the
-model did *better* without it. The label shows in how many seasons removing it
-hurt; a variable that helps in only a few seasons probably isn't real.
+model did *better* without it. The whisker is a 95% interval from the same paired
+week-block bootstrap as in section 4, and the label shows in how many seasons
+removing it hurt.
+
+**Reading the intervals.** Sections 6 and 7 test about 50 comparisons between them,
+so even if none of these variables mattered, a couple of 95% intervals would exclude
+0 by chance. Trust a bar whose interval clears 0 comfortably *and* that hurt in most
+seasons; a bar that only just clears 0, or that hurt in only a few seasons, may be
+noise.
 
 ```{r ablation-plot-fn}
-ablation_plot <- function(abl, title) {
-  s <- summarize_ablation(abl) |>
-    mutate(label = reorder(lab(dropped), mean_d_rmse),
-           helps = ifelse(mean_d_rmse > 0, "Removing it hurts", "Removing it helps"),
+# Pooled bootstrap estimates joined to the per-season "seasons hurt" counts.
+ablation_summary <- function(abl, boot) {
+  inner_join(boot, summarize_ablation(abl), by = "dropped") |>
+    arrange(desc(d_rmse))
+}
+ablation_plot <- function(abl, boot, title) {
+  s <- ablation_summary(abl, boot) |>
+    mutate(label = reorder(lab(dropped), d_rmse),
+           helps = ifelse(d_rmse > 0, "Removing it hurts", "Removing it helps"),
            seasons_txt = paste0(seasons_hurt, "/", n_seasons))
-  ggplot(s, aes(mean_d_rmse, label, fill = helps)) +
+  ggplot(s, aes(d_rmse, label, fill = helps)) +
     geom_col(width = 0.7) +
     geom_vline(xintercept = 0, colour = ink2, linewidth = 0.4) +
-    geom_text(aes(label = seasons_txt,
-                  hjust = ifelse(mean_d_rmse >= 0, -0.15, 1.15)),
+    geom_linerange(aes(xmin = d_rmse_low, xmax = d_rmse_high), colour = ink, linewidth = 0.5) +
+    geom_text(aes(x = ifelse(d_rmse >= 0, d_rmse_high, d_rmse_low), label = seasons_txt,
+                  hjust = ifelse(d_rmse >= 0, -0.2, 1.2)),
               size = 3, colour = ink2) +
     scale_fill_manual(values = c("Removing it hurts" = pal[1], "Removing it helps" = pal[2]),
                       breaks = c("Removing it hurts", "Removing it helps")) +
     scale_x_continuous(expand = expansion(mult = 0.18)) +
-    labs(title = title, subtitle = "Label = seasons where removing it hurt",
-         x = "Increase in margin RMSE when removed (points)", y = NULL) +
+    labs(title = title,
+         subtitle = "Whisker = 95% week-block bootstrap interval; label = seasons where removing it hurt",
+         x = "Increase in margin RMSE when removed (points, all test games)", y = NULL) +
     theme_report()
 }
-ablation_table <- function(abl) {
-  summarize_ablation(abl) |>
-    transmute(Removed = lab(dropped), `Δ RMSE` = mean_d_rmse, `Δ log loss` = mean_d_log_loss,
+ablation_table <- function(abl, boot) {
+  ablation_summary(abl, boot) |>
+    transmute(Removed = lab(dropped),
+              `Δ RMSE [95% interval]` = fmt_ci(d_rmse, d_rmse_low, d_rmse_high, 3),
+              `Δ log loss [95% interval]` = fmt_ci(d_log_loss, d_log_loss_low, d_log_loss_high, 4),
               `Seasons hurt` = paste0(seasons_hurt, "/", n_seasons)) |>
-    kable(digits = 4)
+    kable()
 }
 ```
 
 ### By group
 
 ```{r ablation-groups, fig.height=3.2}
-ablation_plot(res$ablation_groups, "Variable groups")
-ablation_table(res$ablation_groups)
+ablation_plot(res$ablation_groups, res$ablation_groups_boot, "Variable groups")
+ablation_table(res$ablation_groups, res$ablation_groups_boot)
 ```
 
 ### By variable
 
 ```{r ablation-vars, fig.height=7}
-ablation_plot(res$ablation_vars, "Individual variables")
-ablation_table(res$ablation_vars)
+ablation_plot(res$ablation_vars, res$ablation_vars_boot, "Individual variables")
+ablation_table(res$ablation_vars, res$ablation_vars_boot)
 ```
 
 <!-- NOAH: your interpretation here -->
@@ -370,10 +411,14 @@ ablation_table(res$ablation_vars)
 The same drop-one test, run on the model that already includes the closing spread.
 This asks which variables still add predictive value once the market's opinion is
 known, which is the question that matters for beating Kalshi and Polymarket prices.
+The same caution as in section 6 applies: with about 50 intervals across the two
+sections, expect a couple to exclude 0 by chance, so trust bars whose interval clears
+0 comfortably and that hurt in most seasons.
 
 ```{r ablation-market, fig.height=7.5}
-ablation_plot(res$ablation_market_vars, "Variables, given the closing spread")
-ablation_table(res$ablation_market_vars)
+ablation_plot(res$ablation_market_vars, res$ablation_market_vars_boot,
+              "Variables, given the closing spread")
+ablation_table(res$ablation_market_vars, res$ablation_market_vars_boot)
 ```
 
 <!-- NOAH: your interpretation here -->
