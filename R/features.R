@@ -5,7 +5,8 @@ FEATURE_GROUPS <- list(
   strength    = c("pass_off_diff", "rush_off_diff", "pass_def_diff", "rush_def_diff"),
   situational = c("home", "rest_diff", "home_off_bye", "away_off_bye", "home_short_week",
                   "away_short_week", "away_travel_miles", "tz_crossed", "div_game", "primetime"),
-  qb          = c("home_qb_changed", "away_qb_changed", "home_qb_backup", "away_qb_backup"),
+  qb          = c("home_qb_changed", "away_qb_changed", "home_qb_backup", "away_qb_backup",
+                  "qb_adj_diff"),
   environment = c("dome", "temp", "wind", "turf")
 )
 
@@ -49,8 +50,17 @@ qb_flags <- function(sched, lookback = 8) {
                        names_glue = "{side}_{.value}")
 }
 
-build_features <- function(sched, ratings, stadiums) {
-  qb <- qb_flags(sched)
+# 1 when either team's starter changed or a backup started: the games where QB
+# ratings should matter most.
+add_qb_change_game <- function(df) {
+  dplyr::mutate(df, qb_change_game = as.numeric(home_qb_changed == 1 | away_qb_changed == 1 |
+                                                  home_qb_backup == 1 | away_qb_backup == 1))
+}
+
+# qb: NULL, or list(ratings = <QB ratings>, mix = <team_qb_mix() output>) to add the
+# starter adjustment (qb_adj_diff). Without it the QB columns are NA.
+build_features <- function(sched, ratings, stadiums, qb = NULL) {
+  flags <- qb_flags(sched)
   homes <- team_home_venue(sched)
   st <- dplyr::select(stadiums, stadium_id, lat, lon, tz)
 
@@ -85,6 +95,7 @@ build_features <- function(sched, ratings, stadiums) {
     fill_median(stadium_id, season) |>
     fill_median(stadium_id) |>
     fill_median(season)
+  n_missing_starters <- sum(is.na(games$home_qb_id)) + sum(is.na(games$away_qb_id))
 
   out <- games |>
     dplyr::mutate(
@@ -104,13 +115,19 @@ build_features <- function(sched, ratings, stadiums) {
       spread = spread_line
     ) |>
     rating_diffs(ratings) |>
-    dplyr::left_join(qb, by = "game_id") |>
+    dplyr::left_join(flags, by = "game_id") |>
+    add_qb_change_game() |>
+    add_qb_adjustments(qb) |>
     dplyr::select(game_id, season, week, gameday, margin, win,
-                  dplyr::all_of(unlist(FEATURE_GROUPS, use.names = FALSE)), spread)
+                  dplyr::all_of(unlist(FEATURE_GROUPS, use.names = FALSE)), spread,
+                  home_qb_adj, away_qb_adj, qb_change_game)
 
-  required <- c("margin", "win", unlist(FEATURE_GROUPS, use.names = FALSE))
+  feature_vars <- unlist(FEATURE_GROUPS, use.names = FALSE)
+  # Without QB input the QB gap is NA by design and not required.
+  required <- c("margin", "win", if (is.null(qb)) setdiff(feature_vars, "qb_adj_diff") else feature_vars)
   complete <- stats::complete.cases(out[required])
   out <- out[complete, ]
   attr(out, "dropped") <- sum(!complete)
+  attr(out, "missing_starters") <- n_missing_starters
   out
 }

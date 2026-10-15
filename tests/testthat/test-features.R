@@ -14,7 +14,8 @@ test_that("one row per completed game with correct outcomes", {
 test_that("columns match the spec's feature table", {
   expect_named(feats(), c("game_id", "season", "week", "gameday", "margin", "win",
                           FEATURE_GROUPS$strength, FEATURE_GROUPS$situational,
-                          FEATURE_GROUPS$qb, FEATURE_GROUPS$environment, "spread"),
+                          FEATURE_GROUPS$qb, FEATURE_GROUPS$environment, "spread",
+                          "home_qb_adj", "away_qb_adj", "qb_change_game"),
                ignore.order = TRUE)
 })
 
@@ -93,7 +94,7 @@ test_that("time zones crossed wrap around the globe", {
 
 test_that("missing QB IDs and first games give 0 flags, not NA", {
   f <- feats()
-  expect_false(anyNA(f[FEATURE_GROUPS$qb]))
+  expect_false(anyNA(f[setdiff(FEATURE_GROUPS$qb, "qb_adj_diff")]))
   expect_equal(row_of(f, "g1")$home_qb_changed, 0)
   expect_equal(row_of(f, "tie_game")$home_qb_backup, 0)
 })
@@ -130,5 +131,47 @@ test_that("games missing a required feature are dropped and counted", {
   s$home_rest[s$game_id == "g3"] <- NA
   f <- build_features(s, toy_ratings(), toy_stadiums())
   expect_false("g3" %in% f$game_id)
+  expect_equal(attr(f, "dropped"), 1)
+})
+
+feats_qb <- function(qb = toy_qb()) build_features(toy_sched(), toy_ratings(), toy_stadiums(), qb = qb)
+qb_cols <- c("home_qb_adj", "away_qb_adj", "qb_adj_diff")
+
+test_that("QB adjustment is starter rating minus team mix, home minus away", {
+  bg <- row_of(feats_qb(), "backup_game")   # Henne (-0.2) for KC (mix 0.3) vs Minshew for JAX
+  expect_equal(c(bg$home_qb_adj, bg$away_qb_adj, bg$qb_adj_diff), c(-0.5, 0, -0.5))
+  expect_equal(row_of(feats_qb(), "g1")$qb_adj_diff, 0)
+})
+
+test_that("a missing starter ID gives adjustment 0 and is counted", {
+  f <- feats_qb()
+  tie <- row_of(f, "tie_game")             # home QB ID is NA
+  expect_equal(tie$home_qb_adj, 0)
+  expect_equal(attr(f, "missing_starters"), 1)
+})
+
+test_that("QB-change games are those with any change or backup flag", {
+  f <- feats_qb()
+  expect_equal(row_of(f, "backup_game")$qb_change_game, 1)
+  expect_equal(row_of(f, "tie_game")$qb_change_game, 1)   # Mahomes back from Henne
+  expect_equal(row_of(f, "g1")$qb_change_game, 0)
+  expect_equal(f$qb_change_game,
+               as.numeric(f$home_qb_changed == 1 | f$away_qb_changed == 1 |
+                            f$home_qb_backup == 1 | f$away_qb_backup == 1))
+})
+
+test_that("without QB input, rows and existing columns are unchanged", {
+  f0 <- feats()
+  f1 <- feats_qb()
+  expect_equal(f0$game_id, f1$game_id)
+  expect_true(all(is.na(unlist(f0[qb_cols]))))
+  for (v in setdiff(names(f0), qb_cols)) expect_equal(f0[[v]], f1[[v]], info = v)
+})
+
+test_that("with QB input, a game missing its team mix is dropped and counted", {
+  qb <- toy_qb()
+  qb$mix <- qb$mix[!(qb$mix$team == "JAX" & qb$mix$week == 6L), ]
+  f <- feats_qb(qb)
+  expect_false("london_game" %in% f$game_id)
   expect_equal(attr(f, "dropped"), 1)
 })

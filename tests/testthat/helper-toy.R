@@ -30,3 +30,17 @@ toy_stadiums <- function() {
     "LON00",     51.56, -0.28,   "Europe/London"
   )
 }
+
+# QB ratings and team mixes for the toy schedule. Mahomes is KC's usual starter, so
+# his adjustment is 0; Henne is 0.5 worse than KC's mix.
+toy_qb <- function() {
+  weeks <- c(1:7, 20L)
+  rating <- c(mahomes = 0.3, henne = -0.2, watson = 0.1, minshew = 0)
+  mix <- c(KC = 0.3, HOU = 0.1, JAX = 0)
+  list(
+    ratings = tidyr::expand_grid(season = 2020L, week = weeks, qb_id = names(rating)) |>
+      dplyr::mutate(qb_rating = unname(rating[qb_id]), career_dropbacks = 1000L),
+    mix = tidyr::expand_grid(season = 2020L, week = weeks, team = names(mix)) |>
+      dplyr::mutate(qb_mix = unname(mix[team]))
+  )
+}

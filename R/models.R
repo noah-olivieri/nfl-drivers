@@ -2,10 +2,15 @@
 # Numeric features are standardized with training-rows-only means and SDs, so each
 # coefficient reads as points (or log-odds) per 1 SD; binary flags stay 0/1.
 
+# full and market keep the variables they had before QB ratings, so they stay the
+# baselines; the _qb specs add the QB rating gap.
+FULL_VARS <- setdiff(unlist(FEATURE_GROUPS, use.names = FALSE), "qb_adj_diff")
 MODEL_SPECS <- list(
-  base   = "home",
-  full   = unlist(FEATURE_GROUPS, use.names = FALSE),
-  market = c(unlist(FEATURE_GROUPS, use.names = FALSE), "spread")
+  base      = "home",
+  full      = FULL_VARS,
+  full_qb   = c(FULL_VARS, "qb_adj_diff"),
+  market    = c(FULL_VARS, "spread"),
+  market_qb = c(FULL_VARS, "qb_adj_diff", "spread")
 )
 
 fit_scaler <- function(train, vars) {

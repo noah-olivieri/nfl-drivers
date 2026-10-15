@@ -42,3 +42,11 @@ test_that("MODEL_SPECS: market is full plus the spread", {
   expect_equal(MODEL_SPECS$base, "home")
   expect_equal(setdiff(MODEL_SPECS$market, MODEL_SPECS$full), "spread")
 })
+
+test_that("MODEL_SPECS: QB specs add only the QB gap; baselines exclude it", {
+  expect_false("qb_adj_diff" %in% MODEL_SPECS$full)
+  expect_false("qb_adj_diff" %in% MODEL_SPECS$market)
+  expect_equal(setdiff(MODEL_SPECS$full_qb, MODEL_SPECS$full), "qb_adj_diff")
+  expect_equal(setdiff(MODEL_SPECS$market_qb, MODEL_SPECS$market), "qb_adj_diff")
+  expect_equal(setdiff(MODEL_SPECS$market_qb, MODEL_SPECS$full_qb), "spread")
+})
