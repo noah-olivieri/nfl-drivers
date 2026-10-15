@@ -246,8 +246,8 @@ f_qb <- res$features_ridge
 backup_adj <- c(f_qb$home_qb_adj[f_qb$home_qb_backup == 1], f_qb$away_qb_adj[f_qb$away_qb_backup == 1])
 ```
 
-Ratings for **`r qb_season` week `r qb_week`**, among QBs who have started a game this
-season. Rating 0 = the average dropback.
+Ratings for **`r qb_season` week `r qb_week`**, among QBs who have started, or are
+projected to start, a game this season. Rating 0 = the average dropback.
 
 ```{r qb-top-bottom}
 head(qb_table, 10) |> kable()
@@ -616,7 +616,9 @@ ablation_table(res$ablation_market_qb_vars, res$ablation_market_qb_vars_boot)
   replacing a running QB lowers the QB gap only for his passing, sacks and scrambles;
   the team's rush rating keeps his designed runs until it catches up.
 - **QB history starts in 2006.** Career dropback counts for QBs who began before 2006
-  are undercounted, but by 2010 they are all in the top experience level anyway.
+  are undercounted. About 90 of the roughly 8,900 starts from 2010 on (about 1%), by
+  veterans such as Michael Vick, Rex Grossman, Kerry Collins and Charlie Batch, fall
+  in a lower experience level than their real careers would put them in.
 - **The upcoming week uses projected starters** from the schedule, which can change
   before kickoff.
 - **Weather for open retractable roofs** is filled from stadium medians, not
