@@ -93,15 +93,26 @@ test_that("the team mix is the weighted rating over the team's pass dropbacks on
   fx <- qb_fixture()
   p <- fx$plays
   p$play_type[p$qb_id %in% "qb_avg" & p$season == 2019L] <- "run"   # make them all scrambles
+  p$wp[p$qb_id %in% "rookie_2018_8"] <- 0.02                         # one QB's plays in garbage time
+  team_params <- modifyList(TEAM_TEST_PARAMS, list(offseason_weeks = 8))
   s <- week_of(fx$sched, 2019L, 13L)
-  qb <- ridge_qb(p, s, 2019L)
+  r_all <- compute_qb_ratings(p, s, QB_TEST_PARAMS, 2019L)
+  mix <- team_qb_mix(p, r_all, s, team_params, 2019L)
   cut <- min(as.Date(s$gameday))
   m <- p[p$posteam == "C" & p$qb_dropback == 1 & p$play_type == "pass" &
            p$season %in% 2018:2019 & p$game_date < cut, ]
-  w <- play_weights(m, 2019L, cut, TEAM_TEST_PARAMS)
-  r <- qb$ratings$qb_rating[match(m$qb_id, qb$ratings$qb_id)]
+  w <- play_weights(m, 2019L, cut, team_params)
+  r <- r_all$qb_rating[match(m$qb_id, r_all$qb_id)]
   expect_false(any(m$qb_id == "qb_avg" & m$season == 2019L))
-  expect_equal(qb$mix$qb_mix[qb$mix$team == "C"], sum(w * r) / sum(w))
+  expect_equal(mix$qb_mix[mix$team == "C"], sum(w * r) / sum(w))
+})
+
+test_that("QB play weights decay by age and count garbage time at the garbage weight", {
+  db <- tibble::tibble(game_date = as.Date(c("2020-10-01", "2020-10-01", "2020-09-03")),
+                       wp = c(0.5, 0.02, 0.5))
+  w <- qb_play_weights(db, as.Date("2020-10-08"), QB_TEST_PARAMS)
+  expect_equal(w[2] / w[1], QB_TEST_PARAMS$garbage_weight)
+  expect_equal(w[3] / w[1], 0.5^(4 / QB_TEST_PARAMS$qb_half_life))   # 4 weeks older
 })
 
 test_that("a team whose only QB starts gets qb_adj of exactly 0 (ridge)", {
@@ -219,4 +230,11 @@ test_that("rolling: only QB gives 0, unseen backup is negative, a moved QB keeps
   relabeled <- dplyr::mutate(s1, home_team = chartr("CD", "DC", home_team),
                              away_team = chartr("CD", "DC", away_team))
   expect_equal(compute_rolling_qb_ratings(fx$plays, relabeled, 2018L), qb$ratings)
+})
+
+test_that("the rolling-method team mix ignores plays from that week onward", {
+  fx <- qb_fixture()
+  s <- week_of(fx$sched, 2018L, 9L)
+  cut <- min(as.Date(s$gameday))
+  expect_equal(rolling_qb(fx$plays, s, 2018L), rolling_qb(fx$plays[fx$plays$game_date < cut, ], s, 2018L))
 })
