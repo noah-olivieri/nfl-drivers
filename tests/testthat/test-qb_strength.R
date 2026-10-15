@@ -162,3 +162,61 @@ test_that("no QB input gives NA adjustment columns", {
   expect_true(all(is.na(c(g$home_qb_adj, g$away_qb_adj, g$qb_adj_diff))))
   expect_equal(nrow(g), nrow(s))
 })
+
+rolling_qb <- function(plays, s, season) {
+  r <- compute_rolling_qb_ratings(plays, s, season)
+  list(ratings = r, mix = team_qb_mix(plays, r, s, TEAM_TEST_PARAMS, season))
+}
+
+test_that("rolling QB rating is the mean of his last 300 dropbacks", {
+  fx <- qb_fixture()
+  s <- week_of(fx$sched, 2019L, 10L)
+  r <- compute_rolling_qb_ratings(fx$plays, s, 2019L)
+  cut <- min(as.Date(s$gameday))
+  g <- fx$plays[fx$plays$qb_id %in% "qb_good" & fx$plays$game_date < cut, ]
+  g <- g[order(g$game_date), ]
+  expect_equal(r$qb_rating[r$qb_id == "qb_good"], mean(utils::tail(g$epa, 300)))
+  expect_named(r, c("season", "week", "qb_id", "qb_rating", "career_dropbacks"))
+})
+
+test_that("short histories are padded with the low-experience mean; unseen QBs get exactly it", {
+  fx <- qb_fixture()
+  s <- week_of(fx$sched, 2019L, 10L)
+  s$home_qb_id[s$home_team == "B"] <- "qb_new"
+  s$away_qb_id[s$away_team == "B"] <- "qb_new"
+  r <- compute_rolling_qb_ratings(fx$plays, s, 2019L)
+  cut <- min(as.Date(s$gameday))
+  db <- add_career_dropbacks(qb_dropbacks(fx$plays))
+  low <- db$epa[db$game_date < cut & db$season >= 2016L & db$career_before < 300]
+  expect_equal(r$qb_rating[r$qb_id == "qb_new"], mean(low))
+  rk <- fx$plays$epa[fx$plays$qb_id %in% "rookie_2019_8"]   # 50 dropbacks
+  expect_equal(r$qb_rating[r$qb_id == "rookie_2019_8"], (sum(rk) + 250 * mean(low)) / 300)
+})
+
+test_that("rolling QB ratings ignore plays from that week onward", {
+  fx <- qb_fixture()
+  s <- week_of(fx$sched, 2018L, 9L)
+  cut <- min(as.Date(s$gameday))
+  expect_equal(compute_rolling_qb_ratings(fx$plays, s, 2018L),
+               compute_rolling_qb_ratings(fx$plays[fx$plays$game_date < cut, ], s, 2018L))
+})
+
+test_that("rolling: only QB gives 0, unseen backup is negative, a moved QB keeps his rating", {
+  fx <- qb_fixture()
+  s10 <- week_of(fx$sched, 2019L, 10L)
+  expect_lt(abs(side_adj(add_qb_adjustments(s10, rolling_qb(fx$plays, s10, 2019L)), "B")), 1e-12)
+
+  s_new <- s10
+  s_new$home_qb_id[s_new$home_team == "B"] <- "qb_new"
+  s_new$away_qb_id[s_new$away_team == "B"] <- "qb_new"
+  expect_lt(side_adj(add_qb_adjustments(s_new, rolling_qb(fx$plays, s_new, 2019L)), "B"), 0)
+
+  s1 <- week_of(fx$sched, 2018L, 1L)
+  qb <- rolling_qb(fx$plays, s1, 2018L)
+  g <- add_qb_adjustments(s1, qb)
+  expect_gt(side_adj(g, "D"), 0)
+  expect_lt(side_adj(g, "A"), 0)
+  relabeled <- dplyr::mutate(s1, home_team = chartr("CD", "DC", home_team),
+                             away_team = chartr("CD", "DC", away_team))
+  expect_equal(compute_rolling_qb_ratings(fx$plays, relabeled, 2018L), qb$ratings)
+})

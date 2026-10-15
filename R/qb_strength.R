@@ -169,3 +169,32 @@ add_qb_adjustments <- function(games, qb) {
                   qb_adj_diff = home_qb_adj - away_qb_adj) |>
     dplyr::select(-home_qb_rating, -away_qb_rating, -home_qb_mix, -away_qb_mix)
 }
+
+# Benchmark: each QB's mean EPA over his last n_dropbacks dropbacks before the
+# cutoff, across seasons and teams, with no opponent adjustment. A QB with fewer
+# has the rest filled with the low-experience mean: mean EPA of dropbacks before the
+# cutoff in seasons s-3 to s by QBs who had fewer than n_dropbacks career dropbacks
+# at the time. Rates the same QBs as compute_qb_ratings().
+compute_rolling_qb_ratings <- function(plays, sched, seasons, n_dropbacks = 300) {
+  db <- add_career_dropbacks(qb_dropbacks(plays))
+  db <- db[order(db$game_date), ]   # order() is stable, so plays keep their in-game order
+  starters <- scheduled_starters(sched)
+  cw <- dplyr::filter(week_cutoffs(sched), season %in% seasons)
+  purrr::pmap_dfr(cw, function(season, week, cutoff_date) {
+    past <- db[db$game_date < cutoff_date, ]
+    low <- past$epa[past$season >= season - 3L & past$career_before < n_dropbacks]
+    low_mean <- if (length(low) > 0) mean(low) else 0
+    s <- starters$qb_id[starters$season == season & starters$week == week]
+    qbs <- union(sort(unique(past$qb_id[past$season >= season - QB_SEASONS_BACK])), s[!is.na(s)])
+    last_n <- past[past$qb_id %in% qbs, ] |>
+      dplyr::group_by(qb_id) |>
+      dplyr::slice_tail(n = n_dropbacks) |>
+      dplyr::summarise(sum_epa = sum(epa), k = dplyr::n(), .groups = "drop")
+    i <- match(qbs, last_n$qb_id)
+    sum_epa <- ifelse(is.na(i), 0, last_n$sum_epa[i])
+    k <- ifelse(is.na(i), 0, last_n$k[i])
+    tibble::tibble(season = season, week = week, qb_id = qbs,
+                   qb_rating = (sum_epa + (n_dropbacks - k) * low_mean) / n_dropbacks,
+                   career_dropbacks = career_at(db, qbs, cutoff_date))
+  })
+}
