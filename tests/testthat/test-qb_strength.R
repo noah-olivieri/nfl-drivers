@@ -238,3 +238,31 @@ test_that("the rolling-method team mix ignores plays from that week onward", {
   cut <- min(as.Date(s$gameday))
   expect_equal(rolling_qb(fx$plays, s, 2018L), rolling_qb(fx$plays[fx$plays$game_date < cut, ], s, 2018L))
 })
+
+test_that("the selector takes the best QB-change setting within 0.02 of the best overall", {
+  scores <- tibble::tibble(qb_half_life = c(16, 32, 64, 128), qb_lambda = 0.01,
+                           rmse = c(13.00, 13.01, 13.02, 13.05),
+                           rmse_qb_change = c(14.0, 13.6, 13.5, 13.0))
+  expect_equal(select_qb_params(scores)$qb_half_life, 64)   # 128 is 0.05 off: excluded
+  expect_equal(select_qb_params(scores, tol = 0)$qb_half_life, 16)
+})
+
+test_that("default grid is the spec's 4 x 4 grid", {
+  g <- default_qb_grid()
+  expect_equal(nrow(g), 16)
+  expect_setequal(g$qb_half_life, c(16, 32, 64, 128))
+  expect_setequal(g$qb_lambda, c(1e-3, 3e-3, 1e-2, 3e-2))
+})
+
+test_that("tuning scores both subsets and never uses later seasons", {
+  fx <- qb_fixture()
+  grid <- tibble::tibble(qb_half_life = c(16, 64), qb_lambda = 1e-2, garbage_weight = 0.25)
+  team_r <- compute_ridge_ratings(fx$plays, fx$sched, TEAM_TEST_PARAMS, 2016:2017)
+  full <- tune_qb_params(fx$plays, fx$sched, team_r, TEAM_TEST_PARAMS, grid, seasons = 2016:2017)
+  early <- tune_qb_params(fx$plays[fx$plays$season < 2018L, ], fx$sched[fx$sched$season < 2018L, ],
+                          team_r, TEAM_TEST_PARAMS, grid, seasons = 2016:2017)
+  expect_equal(full, early)
+  expect_named(full$scores, c("qb_half_life", "qb_lambda", "garbage_weight", "rmse", "rmse_qb_change"))
+  expect_true(all(is.finite(full$scores$rmse_qb_change)))
+  expect_named(full$best, c("qb_half_life", "qb_lambda", "garbage_weight"))
+})

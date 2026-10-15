@@ -198,3 +198,43 @@ compute_rolling_qb_ratings <- function(plays, sched, seasons, n_dropbacks = 300)
                    career_dropbacks = career_at(db, qbs, cutoff_date))
   })
 }
+
+default_qb_grid <- function() {
+  tidyr::expand_grid(qb_half_life = c(16, 32, 64, 128), qb_lambda = c(1e-3, 3e-3, 1e-2, 3e-2),
+                     garbage_weight = 0.25)
+}
+
+# Among settings within `tol` RMSE points of the best all-games score (nearly flat),
+# pick the one that does best on QB-change games.
+select_qb_params <- function(scores, tol = 0.02) {
+  near <- scores[scores$rmse <= min(scores$rmse) + tol, ]
+  near[which.min(near$rmse_qb_change), ]
+}
+
+# Score each QB setting by how well that week's ratings explain that week's margins
+# (team rating diffs + QB gap + home), on all games and on QB-change games, using
+# only `seasons` (2010-2017 by default). Team rating params stay fixed. qb_fn takes
+# (plays, sched, params, seasons), so it is for the ridge ratings; the rolling
+# benchmark is never tuned.
+tune_qb_params <- function(plays, sched, team_ratings, team_params, grid, seasons = 2010:2017,
+                           qb_fn = compute_qb_ratings, tol = 0.02) {
+  games <- sched |>
+    dplyr::left_join(qb_flags(sched), by = "game_id") |>
+    add_qb_change_game() |>
+    dplyr::filter(season %in% seasons) |>
+    dplyr::mutate(margin = home_score - away_score, home = as.numeric(location != "Neutral")) |>
+    rating_diffs(team_ratings)
+  scores <- purrr::pmap_dfr(grid, function(...) {
+    params <- list(...)
+    qbr <- qb_fn(plays, sched, params, seasons)
+    mix <- team_qb_mix(plays, qbr, sched, team_params, seasons)
+    d <- add_qb_adjustments(games, list(ratings = qbr, mix = mix))
+    fit <- stats::lm(margin ~ pass_off_diff + rush_off_diff + pass_def_diff + rush_def_diff +
+                       qb_adj_diff + home, data = d, na.action = stats::na.exclude)
+    res <- stats::residuals(fit)
+    tibble::as_tibble(params) |>
+      dplyr::mutate(rmse = sqrt(mean(res^2, na.rm = TRUE)),
+                    rmse_qb_change = sqrt(mean(res[d$qb_change_game == 1]^2, na.rm = TRUE)))
+  })
+  list(best = as.list(select_qb_params(scores, tol)[names(grid)]), scores = scores)
+}
