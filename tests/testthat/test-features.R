@@ -175,3 +175,12 @@ test_that("with QB input, a game missing its team mix is dropped and counted", {
   expect_false("london_game" %in% f$game_id)
   expect_equal(attr(f, "dropped"), 1)
 })
+
+test_that("build_features works with only the files the README says to source", {
+  env <- new.env(parent = baseenv())   # cannot see the helper's fully sourced R/ files
+  for (f in c("load_data.R", "venues.R", "team_strength.R", "features.R")) {
+    sys.source(file.path("../../R", f), envir = env)
+  }
+  f <- env$build_features(toy_sched(), toy_ratings(), toy_stadiums())
+  expect_equal(f$game_id, feats()$game_id)
+})

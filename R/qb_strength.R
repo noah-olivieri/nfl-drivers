@@ -146,30 +146,6 @@ team_qb_mix <- function(plays, qb_ratings, sched, team_params, seasons) {
   })
 }
 
-# Starter rating minus team QB mix for each side, and the home-minus-away gap.
-# About 0 when the usual starter plays. A missing starter ID is assumed to be the
-# usual starter (adjustment 0). qb = NULL gives NA columns.
-add_qb_adjustments <- function(games, qb) {
-  if (is.null(qb)) {
-    return(dplyr::mutate(games, home_qb_adj = NA_real_, away_qb_adj = NA_real_, qb_adj_diff = NA_real_))
-  }
-  r <- dplyr::select(qb$ratings, season, week, qb_id, qb_rating)
-  m <- dplyr::select(qb$mix, season, week, team, qb_mix)
-  games |>
-    dplyr::left_join(dplyr::rename(r, home_qb_id = qb_id, home_qb_rating = qb_rating),
-                     by = c("season", "week", "home_qb_id")) |>
-    dplyr::left_join(dplyr::rename(r, away_qb_id = qb_id, away_qb_rating = qb_rating),
-                     by = c("season", "week", "away_qb_id")) |>
-    dplyr::left_join(dplyr::rename(m, home_team = team, home_qb_mix = qb_mix),
-                     by = c("season", "week", "home_team")) |>
-    dplyr::left_join(dplyr::rename(m, away_team = team, away_qb_mix = qb_mix),
-                     by = c("season", "week", "away_team")) |>
-    dplyr::mutate(home_qb_adj = ifelse(is.na(home_qb_id), 0, home_qb_rating - home_qb_mix),
-                  away_qb_adj = ifelse(is.na(away_qb_id), 0, away_qb_rating - away_qb_mix),
-                  qb_adj_diff = home_qb_adj - away_qb_adj) |>
-    dplyr::select(-home_qb_rating, -away_qb_rating, -home_qb_mix, -away_qb_mix)
-}
-
 # Benchmark: each QB's mean EPA over his last n_dropbacks dropbacks before the
 # cutoff, across seasons and teams, with no opponent adjustment. A QB with fewer
 # has the rest filled with the low-experience mean: mean EPA of dropbacks before the
