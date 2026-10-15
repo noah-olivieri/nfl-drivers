@@ -62,3 +62,12 @@ test_that("garbage-time plays count less", {
   expect_gt(shift_full, 0)
   expect_lt(shift_down, 0.6 * shift_full)   # expected ratio ~0.4
 })
+
+test_that("team ratings are identical with or without older seasons' plays", {
+  fx <- qb_fixture()
+  recent <- fx$plays[fx$plays$season >= 2016L, ]
+  expect_equal(compute_ridge_ratings(fx$plays, fx$sched, TEAM_TEST_PARAMS, 2017L),
+               compute_ridge_ratings(recent, fx$sched, TEAM_TEST_PARAMS, 2017L))
+  expect_equal(compute_rolling_ratings(fx$plays, fx$sched, 2017L),
+               compute_rolling_ratings(recent, fx$sched, 2017L))
+})

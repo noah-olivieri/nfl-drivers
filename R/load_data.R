@@ -69,10 +69,14 @@ clean_plays_teams <- function(df) {
 }
 
 # Run and pass plays with a valid EPA (drops kneels, spikes and no-play penalties).
+# qb_id credits each dropback (pass, sack or scramble) to the QB; scrambles keep
+# play_type "run", so team ratings still count them as runs.
 clean_plays <- function(pbp) {
   pbp |>
     dplyr::filter(pass == 1 | rush == 1, !is.na(epa), play_type %in% c("pass", "run")) |>
     dplyr::transmute(season, week, game_id, game_date = as.Date(game_date),
-                     posteam, defteam, home_team, play_type, epa, wp) |>
+                     posteam, defteam, home_team, play_type, epa, wp,
+                     qb_dropback = dplyr::coalesce(as.numeric(qb_dropback), 0),
+                     qb_id = ifelse(qb_dropback == 1, id, NA_character_)) |>
     clean_plays_teams()
 }

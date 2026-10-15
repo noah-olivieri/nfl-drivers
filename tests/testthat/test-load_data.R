@@ -51,8 +51,21 @@ test_that("clean_plays keeps only pass/run plays with EPA", {
                       posteam = "KC", defteam = "HOU", home_team = "KC",
                       play_type = c("pass", "run", "qb_kneel", "no_play", "pass"),
                       pass = c(1, 0, 0, 1, 1), rush = c(0, 1, 1, 0, 0),
-                      epa = c(0.5, -0.2, -0.1, 0.3, NA), wp = 0.5)
+                      epa = c(0.5, -0.2, -0.1, 0.3, NA), wp = 0.5,
+                      qb_dropback = c(1, 0, 0, 1, 1), id = c("qb1", "rb1", "qb1", "qb1", "qb1"))
   out <- clean_plays(p)
   expect_equal(nrow(out), 2)
   expect_s3_class(out$game_date, "Date")
+})
+
+test_that("clean_plays credits dropbacks, including scrambles, to the QB's id", {
+  p <- tibble::tibble(season = 2020L, week = 1L, game_id = "g", game_date = "2020-09-13",
+                      posteam = "KC", defteam = "HOU", home_team = "KC",
+                      play_type = c("pass", "run", "run"),   # pass, scramble, designed run
+                      pass = c(1, 1, 0), rush = c(0, 0, 1), epa = c(0.5, 0.8, -0.2), wp = 0.5,
+                      qb_dropback = c(1, 1, 0), id = c("qb1", "qb1", "rb1"))
+  out <- clean_plays(p)
+  expect_equal(out$qb_dropback, c(1, 1, 0))
+  expect_equal(out$qb_id, c("qb1", "qb1", NA))
+  expect_equal(out$play_type, c("pass", "run", "run"))   # scrambles stay "run" for team ratings
 })
