@@ -170,6 +170,6 @@ Written reasoning in the report is Noah's; placeholders mark where his interpret
 
 - xgboost / SHAP check
 - Interaction or nonlinear terms
-- Individual QB quality ratings
+- Individual QB quality ratings (designed separately in `2026-10-15-qb-ratings-design.md`)
 - Kalshi / Polymarket prices
 - Forecast Lab integration

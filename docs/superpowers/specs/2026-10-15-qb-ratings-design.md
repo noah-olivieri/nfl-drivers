@@ -85,7 +85,7 @@ dropback EPA ~ qb + defense_team + home + experience_bin
 `compute_rolling_qb_ratings(plays, sched, seasons, n_dropbacks = 300)` returns the same shape as `compute_qb_ratings()`.
 
 - A QB's rating for week *w* is his mean EPA over his **last 300 dropbacks** before the cutoff, across seasons and teams, unweighted and with no opponent adjustment.
-- **Short histories:** a QB with fewer than 300 dropbacks has the missing ones filled with the **low-experience mean**: mean EPA of dropbacks before the cutoff, over the prior 3 seasons, by QBs who had fewer than 300 career dropbacks at the time. An unseen starter's rating is exactly this value.
+- **Short histories:** a QB with fewer than 300 dropbacks has the missing ones filled with the **low-experience mean**: mean EPA of dropbacks before the cutoff in seasons *s* − 3 through *s* (the current season so far plus the 3 before it), by QBs who had fewer than 300 career dropbacks at the time. An unseen starter's rating is exactly this value.
 - `n_dropbacks` is fixed, not tuned, like the team baseline's `n_games = 8`.
 
 ## 4. Team QB mix and features

@@ -38,9 +38,12 @@ model_labels <- c(
   full_rolling = "Full model, rolling ratings",
   full_ridge = "Full model, ridge ratings",
   market = "Full model + spread",
-  spread_only = "Closing spread alone"
+  spread_only = "Closing spread alone",
+  full_qb_ridge = "Full model + QB ratings (ridge)",
+  full_qb_rolling = "Full model + QB ratings (rolling)",
+  market_qb = "Full model + spread + QB ratings"
 )
-model_cols <- setNames(pal, names(model_labels))
+model_cols <- setNames(pal, names(model_labels)[1:5])   # section 5 charts the original five
 
 var_labels <- c(
   pass_off_diff = "Pass offense rating",
@@ -61,6 +64,7 @@ var_labels <- c(
   away_qb_changed = "Away QB changed",
   home_qb_backup = "Home QB is backup",
   away_qb_backup = "Away QB is backup",
+  qb_adj_diff = "QB rating gap (starter vs. team mix)",
   dome = "Dome / closed roof",
   temp = "Temperature",
   wind = "Wind",
@@ -68,7 +72,7 @@ var_labels <- c(
   spread = "Closing spread",
   strength = "Team strength (4 ratings)",
   situational = "Situational (10 variables)",
-  qb = "QB status (4 variables)",
+  qb = "QB (status flags; + rating gap in QB models)",
   environment = "Environment (4 variables)"
 )
 lab <- function(x) unname(ifelse(x %in% names(var_labels), var_labels[x], x))
@@ -184,7 +188,156 @@ latest |>
 
 <!-- NOAH: your interpretation here -->
 
-## 3. Effect sizes
+## 3. QB ratings
+
+Team pass ratings blend every QB who played for a team. This section rates QBs
+individually, so a backup start shows up as a weaker passing game.
+
+Each week, before that week's games, one weighted ridge regression is fit on every
+dropback (pass, sack or scramble) from the current and previous four seasons:
+
+> dropback EPA = QB strength + defense strength + home-field + experience level
+
+A QB's experience level is his career dropbacks before the game (0–99, 100–499,
+500–1499, 1500+, counted from 2006). QB strengths are shrunk toward zero, so a QB
+with few dropbacks is rated close to the typical QB at his experience level, which
+for 0–99 dropbacks is well below average. Ratings follow the QB, not the team.
+
+The **starter adjustment** compares the starter with the QBs whose plays built the
+team's pass rating: starter rating minus the average rating of those QBs, weighted the
+same way the team rating weights their plays. When the usual starter plays it is about
+zero. The model uses the home-minus-away difference, the **QB rating gap**.
+
+A simpler benchmark rates each QB by his plain mean EPA over his last 300 dropbacks
+(padded with the average of low-experience QBs when he has fewer), with the same
+starter adjustment.
+
+QB half-life and ridge penalty were chosen on 2010–2017: among settings within 0.02
+RMSE of the best on all games, the one best on games where a starter changed or a
+backup started.
+
+```{r qb-tuning}
+qb_best <- res$qb_tuning$best
+res$qb_tuning$scores |>
+  arrange(rmse) |>
+  transmute(`Half-life (weeks)` = qb_half_life, `Ridge penalty` = qb_lambda,
+            `RMSE, all games` = rmse, `RMSE, QB-change games` = rmse_qb_change,
+            Chosen = ifelse(qb_half_life == qb_best$qb_half_life & qb_lambda == qb_best$qb_lambda,
+                            "✓", "")) |>
+  kable(digits = 4)
+```
+
+```{r qb-latest}
+qb_season <- max(res$qb_ratings_ridge$season)
+qb_week <- max(res$qb_ratings_ridge$week[res$qb_ratings_ridge$season == qb_season])
+starters_now <- res$qb_starters |>
+  filter(season == qb_season) |>
+  arrange(week) |>
+  group_by(qb_id) |>
+  summarise(team = last(team), .groups = "drop")
+qb_table <- res$qb_ratings_ridge |>
+  filter(season == qb_season, week == qb_week) |>
+  inner_join(starters_now, by = "qb_id") |>
+  left_join(res$qb_names, by = "qb_id") |>
+  arrange(desc(qb_rating)) |>
+  transmute(QB = coalesce(qb_name, qb_id), Team = team, `Rating (EPA/dropback)` = qb_rating,
+            `Career dropbacks` = career_dropbacks)
+f_qb <- res$features_ridge
+backup_adj <- c(f_qb$home_qb_adj[f_qb$home_qb_backup == 1], f_qb$away_qb_adj[f_qb$away_qb_backup == 1])
+```
+
+Ratings for **`r qb_season` week `r qb_week`**, among QBs who have started a game this
+season. Rating 0 = the average dropback.
+
+```{r qb-top-bottom}
+head(qb_table, 10) |> kable()
+tail(qb_table, 10) |> kable()
+```
+
+Sanity check: in **`r sprintf("%.0f%%", 100 * mean(backup_adj < 0))`** of
+`r length(backup_adj)` backup starts (2010 onward), the backup's adjustment is
+negative. Dropbacks without a player ID left out: `r res$excluded_dropbacks`. Games
+with a missing starter ID (adjustment set to 0): `r res$missing_starters`.
+
+### Accuracy with QB ratings
+
+RMSE by test season, on all games and on games where either team's starter changed
+or a backup started (2026 is partial):
+
+```{r qb-accuracy}
+qb_models <- c("full_ridge", "full_qb_ridge", "full_qb_rolling", "spread_only")
+qb_season_table <- function(df) {
+  df |>
+    filter(model %in% qb_models) |>
+    transmute(Season = partial_label(season), model = model_labels[model], rmse) |>
+    pivot_wider(names_from = model, values_from = rmse) |>
+    kable()
+}
+qb_season_table(res$scores)
+qb_season_table(filter(res$scores_qb_subset, subset == "qb_change"))
+bind_rows(mutate(res$scores, subset = "All games"),
+          mutate(filter(res$scores_qb_subset, subset == "qb_change"), subset = "QB-change games")) |>
+  filter(model %in% qb_models, season <= 2025) |>
+  group_by(Games = subset, Model = model_labels[model]) |>
+  summarise(`Margin RMSE` = mean(rmse), `Log loss` = mean(log_loss),
+            `Games per season` = mean(n_games), .groups = "drop") |>
+  kable()
+```
+
+### Do QB ratings earn their place?
+
+The rule was fixed before any results. Seasons 2018–2025 count; 2026 does not. QB
+ratings earn their place if either:
+
+- **Path 1 (all games):** the QB model beats the full model on both RMSE and log loss
+  (95% interval of the difference entirely below 0), and has lower RMSE in at least 5
+  of the 8 seasons; or
+- **Path 2 (QB-change games):** on QB-change games, the QB model beats the full model
+  on RMSE (interval entirely below 0), and on all games its RMSE and log loss are no
+  worse.
+
+```{r qb-verdict}
+v <- res$qb_verdict
+bind_rows(mutate(res$qb_all_comparison, Games = "All games"),
+          mutate(res$qb_subset_comparison, Games = "QB-change games")) |>
+  transmute(Subset = Games,
+            `Δ RMSE [95% interval]` = fmt_ci(d_rmse, d_rmse_low, d_rmse_high, 3),
+            `Δ log loss [95% interval]` = fmt_ci(d_log_loss, d_log_loss_low, d_log_loss_high, 4),
+            `Games scored` = n_games) |>
+  kable()
+```
+
+Δ is the QB model (ridge) minus the full model, 2018–2025; negative means the QB model
+is better. Seasons with lower RMSE: **`r v$seasons_better` of `r v$n_seasons`**.
+Path 1: **`r ifelse(v$path1_all_games, "passed", "not passed")`**. Path 2:
+**`r ifelse(v$path2_qb_change, "passed", "not passed")`**. Verdict: QB ratings
+**`r ifelse(v$earns_place, "earn", "do not earn")`** their place.
+
+Other comparisons (all test seasons, 2026 included):
+
+```{r qb-comparisons}
+res$model_comparisons |>
+  filter(model_b %in% c("full_qb_ridge", "full_qb_rolling", "market_qb")) |>
+  transmute(Model = model_labels[model_b], `Compared with` = model_labels[model_a],
+            `Δ RMSE [95% interval]` = fmt_ci(d_rmse, d_rmse_low, d_rmse_high, 3),
+            `Δ log loss [95% interval]` = fmt_ci(d_log_loss, d_log_loss_low, d_log_loss_high, 4)) |>
+  kable()
+```
+
+```{r qb-coef}
+res$coefs_qb |>
+  filter(term == "qb_adj_diff") |>
+  transmute(Model = model, Estimate = estimate, `95% low` = conf_low, `95% high` = conf_high) |>
+  kable()
+```
+
+The QB rating gap coefficient is per 1 SD of the gap (2010–2025 fit): points of
+margin in the margin model, log-odds in the win model. Ablation for the QB models is
+in sections 7 and 8.
+
+<!-- NOAH: your interpretation here -->
+
+## 4. Effect sizes
 
 Coefficients from the margin model fit on 2010–2025. Numeric variables are
 standardized, so each bar reads as **points of margin per 1 standard deviation**.
@@ -251,7 +404,7 @@ cf |>
 
 <!-- NOAH: your interpretation here -->
 
-## 4. Walk-forward accuracy
+## 5. Walk-forward accuracy
 
 For each test season, every model is trained only on earlier seasons (starting in
 2010) and then predicts that season. Lower is better for both metrics. The closing
@@ -259,7 +412,8 @@ spread is the market's prediction and the real benchmark to beat.
 
 ```{r accuracy, fig.height=5}
 sc <- res$scores |>
-  mutate(Model = factor(model_labels[model], levels = model_labels))
+  filter(model %in% names(model_cols)) |>
+  mutate(Model = factor(model_labels[model], levels = model_labels[names(model_cols)]))
 end_labels <- sc |> group_by(Model) |> filter(season == max(season))
 
 accuracy_plot <- function(metric, title, ylab) {
@@ -269,7 +423,7 @@ accuracy_plot <- function(metric, title, ylab) {
     ggrepel::geom_text_repel(data = end_labels, aes(label = Model), size = 3, colour = ink2,
                              direction = "y", hjust = 0, nudge_x = 0.25, segment.colour = grid_col,
                              min.segment.length = 0, box.padding = 0.15, show.legend = FALSE) +
-    scale_colour_manual(values = setNames(model_cols, model_labels)) +
+    scale_colour_manual(values = setNames(model_cols, model_labels[names(model_cols)])) +
     scale_x_continuous(breaks = unique(sc$season), labels = partial_label(unique(sc$season)),
                        expand = expansion(mult = c(0.03, 0.4))) +
     labs(title = title, x = NULL, y = ylab) +
@@ -312,7 +466,7 @@ res$model_comparisons |>
 
 <!-- NOAH: your interpretation here -->
 
-## 5. Calibration
+## 6. Calibration
 
 When the full model (ridge ratings) says a team wins 70% of the time, does it? Each
 point is a bin of predictions from every test season; points on the dashed line
@@ -339,17 +493,17 @@ res$calibration |>
 
 <!-- NOAH: your interpretation here -->
 
-## 6. What matters: ablation
+## 7. What matters: ablation
 
 Each bar shows how much worse the walk-forward margin error gets when a group (or a
 single variable) is removed from the full model, measured over all test games pooled.
 Bigger bars mean the variable carries more predictive value. Negative bars mean the
 model did *better* without it. The whisker is a 95% interval from the same paired
-week-block bootstrap as in section 4, and the label shows in how many seasons
+week-block bootstrap as in section 5, and the label shows in how many seasons
 removing it hurt.
 
-**Reading the intervals.** Sections 6 and 7 test about 50 comparisons between them,
-so even if none of these variables mattered, a couple of 95% intervals would exclude
+**Reading the intervals.** Sections 7 and 8 test about 100 comparisons between them,
+so even if none of these variables mattered, about five 95% intervals would exclude
 0 by chance. Trust a bar whose interval clears 0 comfortably *and* that hurt in most
 seasons; a bar that only just clears 0, or that hurt in only a few seasons, may be
 noise.
@@ -404,15 +558,24 @@ ablation_plot(res$ablation_vars, res$ablation_vars_boot, "Individual variables")
 ablation_table(res$ablation_vars, res$ablation_vars_boot)
 ```
 
+### QB model (full model + QB ratings)
+
+```{r ablation-qb, fig.height=7.5}
+ablation_plot(res$ablation_qb_groups, res$ablation_qb_groups_boot, "Variable groups, QB model")
+ablation_table(res$ablation_qb_groups, res$ablation_qb_groups_boot)
+ablation_plot(res$ablation_qb_vars, res$ablation_qb_vars_boot, "Individual variables, QB model")
+ablation_table(res$ablation_qb_vars, res$ablation_qb_vars_boot)
+```
+
 <!-- NOAH: your interpretation here -->
 
-## 7. After the market
+## 8. After the market
 
 The same drop-one test, run on the model that already includes the closing spread.
 This asks which variables still add predictive value once the market's opinion is
 known, which is the question that matters for beating Kalshi and Polymarket prices.
-The same caution as in section 6 applies: with about 50 intervals across the two
-sections, expect a couple to exclude 0 by chance, so trust bars whose interval clears
+The same caution as in section 7 applies: with about 100 intervals across the two
+sections, expect about five to exclude 0 by chance, so trust bars whose interval clears
 0 comfortably and that hurt in most seasons.
 
 ```{r ablation-market, fig.height=7.5}
@@ -421,9 +584,20 @@ ablation_plot(res$ablation_market_vars, res$ablation_market_vars_boot,
 ablation_table(res$ablation_market_vars, res$ablation_market_vars_boot)
 ```
 
+### With QB ratings
+
+```{r ablation-market-qb, fig.height=7.5}
+ablation_plot(res$ablation_market_qb_groups, res$ablation_market_qb_groups_boot,
+              "Variable groups, given the spread, QB model")
+ablation_table(res$ablation_market_qb_groups, res$ablation_market_qb_groups_boot)
+ablation_plot(res$ablation_market_qb_vars, res$ablation_market_qb_vars_boot,
+              "Variables, given the spread, QB model")
+ablation_table(res$ablation_market_qb_vars, res$ablation_market_qb_vars_boot)
+```
+
 <!-- NOAH: your interpretation here -->
 
-## 8. Caveats and next steps
+## 9. Caveats and next steps
 
 **Caveats**
 
@@ -433,6 +607,18 @@ ablation_table(res$ablation_market_vars, res$ablation_market_vars_boot)
 - **"Backup QB"** means the starter isn't the team's most common starter over its
   previous 8 games. A new starter counts as a backup for his first few games, even
   if the change was planned (for example, a rookie named the week 1 starter).
+- **Scrambles count twice in one case.** Team rush ratings include QB scrambles, and
+  QB ratings include them too. When the usual starter plays this cancels out (his
+  adjustment is about zero). When a scrambling starter is replaced, the team's rush
+  rating still carries his scrambles for a few weeks, so the backup's team looks a
+  little better on the ground than it is.
+- **Designed QB runs are not in QB ratings.** They stay in the team's rush rating, so
+  replacing a running QB lowers the QB gap only for his passing, sacks and scrambles;
+  the team's rush rating keeps his designed runs until it catches up.
+- **QB history starts in 2006.** Career dropback counts for QBs who began before 2006
+  are undercounted, but by 2010 they are all in the top experience level anyway.
+- **The upcoming week uses projected starters** from the schedule, which can change
+  before kickoff.
 - **Weather for open retractable roofs** is filled from stadium medians, not
   measured.
 - **Home and away short-week flags overlap almost completely** (both teams are on

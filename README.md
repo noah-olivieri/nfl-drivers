@@ -1,7 +1,7 @@
 # NFL Game Drivers
 
 Which pre-game variables best predict NFL game outcomes, and why? This project builds
-opponent-adjusted team ratings from play-by-play data, turns every 2010–2026 game into
+opponent-adjusted team and QB ratings from play-by-play data, turns every 2010–2026 game into
 a row of pre-game features, and fits regression models for point margin and win/loss.
 Every model is scored with walk-forward validation: each season is predicted only by a
 model trained on earlier seasons.
@@ -24,7 +24,7 @@ Rscript run.R                 # download data, fit everything -> data/cache/resu
 quarto render report.qmd      # build report.html from those results
 ```
 
-The first run downloads 18 seasons of play-by-play (about 230 MB, cached in
+The first run downloads 21 seasons of play-by-play (about 270 MB, cached in
 `data/cache/`) and tunes the rating parameters, which takes a while. Later runs reuse
 cached seasons and only re-download the current season, so rerunning weekly picks up
 new games.
@@ -45,6 +45,8 @@ the game being predicted or anything after it.
 | `R/load_data.R` | Download and cache nflverse data; clean schedules and plays |
 | `R/venues.R` | Travel distance, time zones, each team's home stadium |
 | `R/team_strength.R` | Weekly ridge ratings, rolling baseline, rating tuning |
+| `R/qb_strength.R` | Weekly QB ratings (ridge and rolling), team QB mix, QB tuning |
+| `R/qb_eval.R` | QB-change subset scoring and the QB-ratings decision rule |
 | `R/features.R` | One pre-game feature row per game |
 | `R/models.R` | Margin and win/loss regressions |
 | `R/validate.R` | Walk-forward validation, scoring, spread benchmark, calibration |
@@ -59,4 +61,6 @@ the game being predicted or anything after it.
 
 `source("R/team_strength.R")` and `source("R/features.R")` (plus `R/load_data.R` and
 `R/venues.R`, which they use) give you `compute_ridge_ratings()` and
-`build_features()` with no other setup.
+`build_features()` with no other setup. For QB-adjusted features, also source
+`R/qb_strength.R` and pass `qb = list(ratings = compute_qb_ratings(...), mix =
+team_qb_mix(...))` to `build_features()`.
