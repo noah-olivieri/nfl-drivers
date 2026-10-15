@@ -79,3 +79,86 @@ test_that("starter ID coverage flags schedules whose IDs don't match play IDs", 
   bad <- dplyr::mutate(fx$sched, home_qb_id = paste0("x", home_qb_id), away_qb_id = paste0("x", away_qb_id))
   expect_equal(starter_id_coverage(bad, fx$plays), 0)
 })
+
+week_of <- function(sched, season, week) sched[sched$season == season & sched$week == week, ]
+side_adj <- function(g, team) {
+  c(g$home_qb_adj[g$home_team == team], g$away_qb_adj[g$away_team == team])
+}
+ridge_qb <- function(plays, s, season) {
+  r <- compute_qb_ratings(plays, s, QB_TEST_PARAMS, season)
+  list(ratings = r, mix = team_qb_mix(plays, r, s, TEAM_TEST_PARAMS, season))
+}
+
+test_that("the team mix is the weighted rating over the team's pass dropbacks only", {
+  fx <- qb_fixture()
+  p <- fx$plays
+  p$play_type[p$qb_id %in% "qb_avg" & p$season == 2019L] <- "run"   # make them all scrambles
+  s <- week_of(fx$sched, 2019L, 13L)
+  qb <- ridge_qb(p, s, 2019L)
+  cut <- min(as.Date(s$gameday))
+  m <- p[p$posteam == "C" & p$qb_dropback == 1 & p$play_type == "pass" &
+           p$season %in% 2018:2019 & p$game_date < cut, ]
+  w <- play_weights(m, 2019L, cut, TEAM_TEST_PARAMS)
+  r <- qb$ratings$qb_rating[match(m$qb_id, qb$ratings$qb_id)]
+  expect_false(any(m$qb_id == "qb_avg" & m$season == 2019L))
+  expect_equal(qb$mix$qb_mix[qb$mix$team == "C"], sum(w * r) / sum(w))
+})
+
+test_that("a team whose only QB starts gets qb_adj of exactly 0 (ridge)", {
+  fx <- qb_fixture()
+  s <- week_of(fx$sched, 2019L, 10L)
+  g <- add_qb_adjustments(s, ridge_qb(fx$plays, s, 2019L))
+  expect_lt(abs(side_adj(g, "B")), 1e-12)
+})
+
+test_that("an unseen backup starting gets a negative qb_adj (ridge)", {
+  fx <- qb_fixture()
+  s <- week_of(fx$sched, 2019L, 10L)
+  s$home_qb_id[s$home_team == "B"] <- "qb_new"
+  s$away_qb_id[s$away_team == "B"] <- "qb_new"
+  qb <- ridge_qb(fx$plays, s, 2019L)
+  g <- add_qb_adjustments(s, qb)
+  new_rating <- qb$ratings$qb_rating[qb$ratings$qb_id == "qb_new"]
+  expect_lt(side_adj(g, "B"), 0)
+  expect_equal(side_adj(g, "B"), new_rating - qb$mix$qb_mix[qb$mix$team == "B"])
+})
+
+test_that("a QB who changes teams keeps his own rating (ridge)", {
+  fx <- qb_fixture()
+  s <- week_of(fx$sched, 2018L, 1L)               # star now starts for D, bad for A
+  qb <- ridge_qb(fx$plays, s, 2018L)
+  g <- add_qb_adjustments(s, qb)
+  expect_gt(side_adj(g, "D"), 0)
+  expect_lt(side_adj(g, "A"), 0)
+  relabeled <- dplyr::mutate(s, home_team = chartr("CD", "DC", home_team),
+                             away_team = chartr("CD", "DC", away_team))
+  expect_equal(compute_qb_ratings(fx$plays, relabeled, QB_TEST_PARAMS, 2018L), qb$ratings)
+})
+
+test_that("the team mix for a week ignores plays from that week onward", {
+  fx <- qb_fixture()
+  s <- week_of(fx$sched, 2018L, 9L)
+  cut <- min(as.Date(s$gameday))
+  expect_equal(ridge_qb(fx$plays, s, 2018L), ridge_qb(fx$plays[fx$plays$game_date < cut, ], s, 2018L))
+})
+
+test_that("the week to forecast gets ratings and a mix for every team; a missing starter gets 0", {
+  fx <- qb_fixture()
+  s <- week_of(fx$sched, 2019L, 16L)
+  nxt <- dplyr::mutate(s, week = 17L, gameday = as.character(as.Date(gameday) + 7),
+                       home_score = NA, away_score = NA)
+  nxt$home_qb_id[1] <- NA
+  qb <- ridge_qb(fx$plays, dplyr::bind_rows(s, nxt), 2019L)
+  expect_false(anyNA(qb$ratings$qb_id))
+  expect_setequal(qb$mix$team[qb$mix$week == 17L], c("A", "B", "C", "D"))
+  g <- add_qb_adjustments(nxt, qb)
+  expect_equal(g$home_qb_adj[1], 0)
+  expect_false(anyNA(g$qb_adj_diff))
+})
+
+test_that("no QB input gives NA adjustment columns", {
+  s <- week_of(qb_fixture()$sched, 2019L, 10L)
+  g <- add_qb_adjustments(s, NULL)
+  expect_true(all(is.na(c(g$home_qb_adj, g$away_qb_adj, g$qb_adj_diff))))
+  expect_equal(nrow(g), nrow(s))
+})

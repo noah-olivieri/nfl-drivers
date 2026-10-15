@@ -124,3 +124,48 @@ starter_id_coverage <- function(sched, plays) {
   ids <- unique(stats::na.omit(c(sched$home_qb_id, sched$away_qb_id)))
   mean(ids %in% plays$qb_id[plays$qb_dropback == 1])
 }
+
+# Each team's QB mix for each season-week: the weighted mean QB rating over exactly
+# the plays and weights that built its ridge pass_off (seasons s and s - 1, before
+# the cutoff, play_weights() with the team params). Only play_type "pass" dropbacks
+# count: scrambles are "run" plays, so they are in rush_off, not pass_off.
+team_qb_mix <- function(plays, qb_ratings, sched, team_params, seasons) {
+  db <- qb_dropbacks(plays)
+  db <- db[db$play_type == "pass", ]
+  cw <- dplyr::filter(week_cutoffs(sched), season %in% seasons)
+  purrr::pmap_dfr(cw, function(season, week, cutoff_date) {
+    p <- db[db$season %in% c(season - 1L, season) & db$game_date < cutoff_date, ]
+    r <- qb_ratings[qb_ratings$season == season & qb_ratings$week == week, ]
+    p$w <- play_weights(p, season, cutoff_date, team_params)
+    p$qb_rating <- r$qb_rating[match(p$qb_id, r$qb_id)]
+    if (anyNA(p$qb_rating)) stop("QB ratings missing for the team mix in ", season, " week ", week)
+    p |>
+      dplyr::group_by(team = posteam) |>
+      dplyr::summarise(qb_mix = sum(w * qb_rating) / sum(w), .groups = "drop") |>
+      tibble::add_column(season = season, week = week, .before = 1)
+  })
+}
+
+# Starter rating minus team QB mix for each side, and the home-minus-away gap.
+# About 0 when the usual starter plays. A missing starter ID is assumed to be the
+# usual starter (adjustment 0). qb = NULL gives NA columns.
+add_qb_adjustments <- function(games, qb) {
+  if (is.null(qb)) {
+    return(dplyr::mutate(games, home_qb_adj = NA_real_, away_qb_adj = NA_real_, qb_adj_diff = NA_real_))
+  }
+  r <- dplyr::select(qb$ratings, season, week, qb_id, qb_rating)
+  m <- dplyr::select(qb$mix, season, week, team, qb_mix)
+  games |>
+    dplyr::left_join(dplyr::rename(r, home_qb_id = qb_id, home_qb_rating = qb_rating),
+                     by = c("season", "week", "home_qb_id")) |>
+    dplyr::left_join(dplyr::rename(r, away_qb_id = qb_id, away_qb_rating = qb_rating),
+                     by = c("season", "week", "away_qb_id")) |>
+    dplyr::left_join(dplyr::rename(m, home_team = team, home_qb_mix = qb_mix),
+                     by = c("season", "week", "home_team")) |>
+    dplyr::left_join(dplyr::rename(m, away_team = team, away_qb_mix = qb_mix),
+                     by = c("season", "week", "away_team")) |>
+    dplyr::mutate(home_qb_adj = ifelse(is.na(home_qb_id), 0, home_qb_rating - home_qb_mix),
+                  away_qb_adj = ifelse(is.na(away_qb_id), 0, away_qb_rating - away_qb_mix),
+                  qb_adj_diff = home_qb_adj - away_qb_adj) |>
+    dplyr::select(-home_qb_rating, -away_qb_rating, -home_qb_mix, -away_qb_mix)
+}
