@@ -81,6 +81,7 @@ New `upcoming_predictions(preds, sched)` in `R/validate.R`: for each run in `pre
 3. `results$upcoming <- upcoming_predictions(preds_all, sched_rate)`, then `preds` keeps completed games only. Everything stored under `preds`, `features_ridge`, `features_rolling` and `features_qb_rolling` holds completed games only, so the report and every comparison see exactly what they see today.
 4. Ablation, coefficients, the bootstrap and the QB verdict run on the completed-only features and predictions. The guards in section 3 make this belt and braces, not the only line of defense.
 5. New `results$upcoming_dropped = attr(features_ridge, "dropped_upcoming")`.
+6. New `results$schedule_downloaded = schedule_download_time(cache_dir, <forecast season>)`: the modification time of `<cache_dir>/schedules_<forecast season>.rds` (`POSIXct`), or `NA` when there is no forecast week. `load_cached()` writes that file right after each download, and the current season is re-downloaded every run, so this is when the schedule (and its projected starters) was fetched. A run with the current season left out of `refresh` shows the older time, which is what a staleness check should see.
 
 Tuning (`tune_rating_params()`, `tune_qb_params()`) still gets the completed-only `sched` and is unchanged.
 
@@ -88,8 +89,8 @@ Tuning (`tune_rating_params()`, `tune_qb_params()`) still gets the completed-onl
 
 A new **"9. Next week"** section before "Caveats and next steps" (which becomes 10):
 
-- Heading line: season and week, with the number of games. If `results$upcoming` is empty (season over), one sentence says so and there is no table.
-- One table, one row per game, ordered by kickoff: **Game** (away @ home), **Kickoff**, **Starters**, **Line (current)**, then the home win probability for each run. `full_qb_ridge` comes first, is marked as the headline model, and also shows its predicted margin.
+- Heading line: season and week, the number of games, and **when the schedule was downloaded** (`results$schedule_downloaded`, shown with its time zone, e.g. "Schedule downloaded 2026-10-15 14:56 PDT"). This lets you spot stale projected starters before using the probabilities. If `results$upcoming` is empty (season over), one sentence says so and there is no table.
+- One table, one row per game, ordered by kickoff: **Game** (away @ home), **Kickoff**, **Away QB** and **Home QB** (each team's projected starter from the schedule; "not listed" when the schedule has none, which the model treats as the usual starter), **Line (current)**, then the home win probability for each run. `full_qb_ridge` comes first, is marked as the headline model, and also shows its predicted margin.
 - Note under the table: `market`, `market_qb` and `spread_only` use the current line for these games, not the closing line they were trained and scored on, so their numbers here aren't comparable to their scored accuracy. They will move as the line moves.
 - If `results$upcoming_dropped` > 0, a line saying how many forecast-week games are missing a feature and so aren't shown.
 - The existing caveat "The upcoming week uses projected starters" stays and now points to this section.
@@ -121,7 +122,8 @@ A new **"9. Next week"** section before "Caveats and next steps" (which becomes 
 - `walk_forward()` predicts unplayed test-season rows, and no training set it builds contains an `NA` outcome (recording `fit_fn`, as in the existing leakage test).
 - `spread_benchmark()` fit is unchanged by `NA`-outcome rows, and it predicts them.
 - `score_predictions()`, `game_losses()` and `calibration_table()` give identical output with and without `NA`-outcome rows.
-- `upcoming_predictions()` returns only the `NA`-margin rows, one per model per game, with team names and starters from the schedule.
+- `upcoming_predictions()` returns only the `NA`-margin rows, one per model per game, with team names and starters from the schedule (a missing starter stays `NA`).
+- `schedule_download_time(cache_dir, season)` (in `R/load_data.R`, used by the pipeline) returns the cache file's modification time, and `NA` for a missing file or `NA` season.
 
 ## Out of scope
 
