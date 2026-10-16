@@ -78,3 +78,12 @@ test_that("compare_models labels each pair, b relative to a", {
   expect_equal(c(cm$model_a, cm$model_b), c("good", "bad"))
   expect_equal(cm$d_rmse, paired_bootstrap(preds$good, preds$bad, n_boot = 50)$d_rmse)
 })
+
+test_that("games without an outcome are left out of the comparison", {
+  a <- boot_data()
+  b <- dplyr::mutate(a, pred_margin = pred_margin + 2)
+  up <- tibble::tibble(game_id = 1000L + 1:3, season = 2020L, week = 21L, margin = NA_real_,
+                       win = NA_real_, pred_margin = 3, pred_win = 0.6)
+  expect_equal(paired_bootstrap(dplyr::bind_rows(a, up), dplyr::bind_rows(b, up), n_boot = 50),
+               paired_bootstrap(a, b, n_boot = 50))
+})

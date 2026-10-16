@@ -18,7 +18,8 @@ spread_benchmark <- function(features, test_seasons = 2018:2026, train_start = 2
   purrr::map_dfr(test_seasons, function(y) {
     test <- features[features$season == y, ]
     if (nrow(test) == 0) return(NULL)
-    train <- features[features$season >= train_start & features$season < y & !is.na(features$spread), ]
+    train <- features[features$season >= train_start & features$season < y &
+                        !is.na(features$spread) & !is.na(features$win), ]
     fit <- stats::glm(win ~ spread, data = train, family = stats::quasibinomial())
     dplyr::transmute(test, game_id, season, week, margin, win, pred_margin = spread,
                      pred_win = unname(stats::predict(fit, newdata = test, type = "response")))
@@ -27,7 +28,7 @@ spread_benchmark <- function(features, test_seasons = 2018:2026, train_start = 2
 
 score_predictions <- function(preds) {
   preds |>
-    dplyr::filter(!is.na(pred_margin), !is.na(pred_win)) |>
+    dplyr::filter(!is.na(margin), !is.na(win), !is.na(pred_margin), !is.na(pred_win)) |>
     dplyr::mutate(p = pmin(pmax(pred_win, 1e-6), 1 - 1e-6)) |>
     dplyr::group_by(season) |>
     dplyr::summarise(
@@ -43,6 +44,7 @@ score_predictions <- function(preds) {
 
 calibration_table <- function(preds, bins = 10) {
   preds |>
+    dplyr::filter(!is.na(win)) |>
     dplyr::mutate(bin = cut(pred_win, breaks = seq(0, 1, length.out = bins + 1),
                             include.lowest = TRUE)) |>
     dplyr::group_by(bin) |>

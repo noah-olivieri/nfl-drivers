@@ -28,6 +28,7 @@ apply_scaler <- function(df, scaler) {
 }
 
 fit_models <- function(train, vars) {
+  train <- train[!is.na(train$margin), ]   # unplayed games have no outcome to learn from
   # Drop anything with no variation in the training rows (e.g. `home` when every
   # training game was a true home game); those carry no information.
   vars <- vars[vapply(vars, function(v) length(unique(train[[v]])) > 1, logical(1))]

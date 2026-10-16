@@ -3,10 +3,11 @@
 # season-weeks are resampled, since games in the same week share rating updates,
 # weather and news.
 
-# Per-game squared margin error and log loss, scored as in score_predictions().
+# Per-game squared margin error and log loss, scored as in score_predictions()
+# (played games only).
 game_losses <- function(preds) {
   preds |>
-    dplyr::filter(!is.na(pred_margin), !is.na(pred_win)) |>
+    dplyr::filter(!is.na(margin), !is.na(win), !is.na(pred_margin), !is.na(pred_win)) |>
     dplyr::mutate(p = pmin(pmax(pred_win, 1e-6), 1 - 1e-6),
                   sq = (margin - pred_margin)^2,
                   ll = -(win * log(p) + (1 - win) * log(1 - p))) |>

@@ -50,3 +50,17 @@ test_that("MODEL_SPECS: QB specs add only the QB gap; baselines exclude it", {
   expect_equal(setdiff(MODEL_SPECS$market_qb, MODEL_SPECS$market), "qb_adj_diff")
   expect_equal(setdiff(MODEL_SPECS$market_qb, MODEL_SPECS$full_qb), "spread")
 })
+
+test_that("fit_models ignores games without an outcome", {
+  set.seed(3)
+  d <- tibble::tibble(game_id = 1:200, x = rnorm(200), home = 1)
+  d$margin <- 2 * d$x + rnorm(200, 0, 5)
+  d$win <- as.numeric(d$margin > 0)
+  unplayed <- tibble::tibble(game_id = 201:210, x = rnorm(10, 5), home = 1,
+                             margin = NA_real_, win = NA_real_)
+  a <- fit_models(d, "x")
+  b <- fit_models(dplyr::bind_rows(d, unplayed), "x")
+  expect_equal(b$scaler, a$scaler)   # scaling must not see unplayed games either
+  expect_equal(coef(b$margin), coef(a$margin))
+  expect_equal(coef(b$win), coef(a$win))
+})

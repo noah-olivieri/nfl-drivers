@@ -70,3 +70,43 @@ test_that("calibration bins compare predicted and actual win rates", {
   expect_equal(cal$actual_rate, c(0.5, 1))
   expect_equal(cal$mean_pred, c(0.065, 0.935))
 })
+
+# wf_data() with its last week (2021 week 5) not yet played.
+wf_unplayed <- function() {
+  d <- wf_data()
+  last <- d$season == 2021 & d$week == 5
+  d$margin[last] <- NA
+  d$win[last] <- NA
+  d
+}
+
+test_that("walk-forward predicts unplayed games and never trains on them", {
+  d <- wf_unplayed()
+  saw_na <- logical()
+  recording_fit <- function(train, vars) {
+    saw_na <<- c(saw_na, anyNA(train$margin))
+    fit_models(train, vars)
+  }
+  out <- walk_forward(d, "x", test_seasons = 2020:2021, train_start = 2014L, fit_fn = recording_fit)
+  expect_false(any(saw_na))
+  up <- out[is.na(out$margin), ]
+  expect_equal(sort(up$game_id), d$game_id[is.na(d$margin)])
+  expect_false(anyNA(up$pred_win))
+})
+
+test_that("spread benchmark predicts unplayed games without fitting on them", {
+  d <- wf_unplayed()
+  out <- spread_benchmark(d, test_seasons = 2021, train_start = 2014L)
+  played <- spread_benchmark(d[!is.na(d$margin), ], test_seasons = 2021, train_start = 2014L)
+  expect_equal(out$pred_win[!is.na(out$margin)], played$pred_win)
+  expect_false(anyNA(out$pred_win))
+})
+
+test_that("scoring and calibration ignore games without an outcome", {
+  p <- tibble::tibble(season = 2020L, margin = c(3, -7), win = c(1, 0),
+                      pred_margin = c(1, -3), pred_win = c(0.8, 0.4))
+  up <- tibble::tibble(season = 2020L, margin = NA_real_, win = NA_real_,
+                       pred_margin = 4, pred_win = 0.6)
+  expect_equal(score_predictions(dplyr::bind_rows(p, up)), score_predictions(p))
+  expect_equal(calibration_table(dplyr::bind_rows(p, up)), calibration_table(p))
+})
