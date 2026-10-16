@@ -106,7 +106,9 @@ A new **"9. Next week"** section before "Caveats and next steps" (which becomes 
 
 - Mid-week: `w5, w6_thu (played), w6_sun, w6_mon, w7` gives `w5, w6_thu, w6_sun, w6_mon`.
 - Week finished: week 6 all played gives week 6 plus all of week 7.
-- The existing BUF–CIN no-contest test and "next unplayed week only" test still pass.
+- The existing "next unplayed week only" test still passes.
+- The BUF–CIN no-contest test gains a played week-18 game, as in the real 2022 data. Without a later played week, an unplayed game in the latest week is a game still to come, not a no-contest, so the old toy (week 17 only) now correctly keeps it.
+- Mid-week, the forecast week's cutoff is still Thursday's date, so Thursday's plays never reach Sunday's ratings.
 
 **Features**
 
