@@ -64,3 +64,6 @@ the game being predicted or anything after it.
 `build_features()` with no other setup. For QB-adjusted features, also source
 `R/qb_strength.R` and pass `qb = list(ratings = compute_qb_ratings(...), mix =
 team_qb_mix(...))` to `build_features()`.
+`build_features()` also returns the forecast week's unplayed games (those whose week
+has ratings) with `margin` and `win` set to `NA`. `fit_models()` skips them; filter on
+`!is.na(margin)` before fitting anything else.

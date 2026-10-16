@@ -597,7 +597,75 @@ ablation_table(res$ablation_market_qb_vars, res$ablation_market_qb_vars_boot)
 
 <!-- NOAH: your interpretation here -->
 
-## 9. Caveats and next steps
+## 9. Next week
+
+Win probabilities for the forecast week's games that are still to be played, from
+every model run.
+
+```{r next-week}
+#| output: asis
+up <- res$upcoming
+dl <- res$schedule_downloaded
+dl_text <- if (is.null(dl) || is.na(dl)) "unknown" else format(dl, "%Y-%m-%d %H:%M %Z")
+if (is.null(up) || nrow(up) == 0) {
+  cat("No unplayed games are on the schedule, so there is nothing to predict. ",
+      "Schedule downloaded ", dl_text, ".\n", sep = "")
+} else {
+  headline <- "full_qb_ridge"
+  runs <- c(headline, setdiff(names(model_labels), headline))
+  runs <- runs[runs %in% up$model]
+  run_labels <- model_labels
+  run_labels["spread_only"] <- "Spread alone (current line)"
+  col_labels <- ifelse(runs == headline, paste0("★ ", run_labels[runs]), run_labels[runs])
+  pct <- function(p) ifelse(is.na(p), "–", sprintf("%.0f%%", 100 * p))
+  signed <- function(x) ifelse(is.na(x), "–", sprintf("%+.1f", x))
+
+  probs <- up |>
+    mutate(model = factor(model, levels = runs), pred_win = pct(pred_win)) |>
+    arrange(model) |>
+    select(game_id, model, pred_win) |>
+    pivot_wider(names_from = model, values_from = pred_win)
+  names(probs)[-1] <- col_labels[match(names(probs)[-1], runs)]
+  margin <- up |>
+    filter(model == headline) |>
+    transmute(game_id, `★ Predicted margin` = signed(pred_margin))
+  tbl <- up |>
+    distinct(game_id, gameday, gametime, away_team, home_team, away_qb_name, home_qb_name, spread) |>
+    arrange(gameday, gametime, game_id) |>
+    left_join(margin, by = "game_id") |>
+    left_join(probs, by = "game_id")
+  shown <- bind_cols(
+    transmute(tbl, Game = paste(away_team, "@", home_team),
+              Kickoff = paste(format(as.Date(gameday), "%a %b %d"), gametime, "ET"),
+              `Away QB` = coalesce(away_qb_name, "not listed"),
+              `Home QB` = coalesce(home_qb_name, "not listed"),
+              `Line (current)` = signed(spread)),
+    select(tbl, `★ Predicted margin`, all_of(unname(col_labels)))
+  )
+
+  season_up <- up$season[1]
+  cat(sprintf("Predictions for **%d week %d** (%d games). Schedule downloaded **%s**; the projected starters and the line are as of then.\n\n",
+              season_up, up$week[1], nrow(tbl), dl_text))
+  cat(kable(shown), sep = "\n")
+  cat("\n\nProbabilities are the **home team's** chance to win. The line and the margin are points ",
+      "from the home team's view (+ = home favored). Every run is trained on 2010–", season_up - 1,
+      ", as in its scored ", season_up, " walk-forward run.\n\n", sep = "")
+  cat("- **★ marks the headline model,** ", model_labels[[headline]], ".\n", sep = "")
+  cat("- **The market runs use the current line, not the closing line.** ",
+      model_labels[["market"]], ", ", model_labels[["market_qb"]], " and Spread alone were ",
+      "trained and scored on closing lines, so for these games their numbers are not comparable ",
+      "to their scored accuracy, and they move as the line moves.\n", sep = "")
+  cat("- **Check the starters before using these numbers.** \"not listed\" means the schedule ",
+      "has no projected starter, and the model then assumes the usual starter. If a starter is ",
+      "wrong or the download time above is stale, rerun `Rscript run.R`.\n", sep = "")
+  if (isTRUE(res$upcoming_dropped > 0)) {
+    cat("- ", res$upcoming_dropped, " forecast-week game(s) are missing a feature and are not shown.\n",
+        sep = "")
+  }
+}
+```
+
+## 10. Caveats and next steps
 
 **Caveats**
 
@@ -620,7 +688,7 @@ ablation_table(res$ablation_market_qb_vars, res$ablation_market_qb_vars_boot)
   veterans such as Michael Vick, Rex Grossman, Kerry Collins and Charlie Batch, fall
   in a lower experience level than their real careers would put them in.
 - **The upcoming week uses projected starters** from the schedule, which can change
-  before kickoff.
+  before kickoff. Section 9 lists them with the time the schedule was downloaded.
 - **Weather for open retractable roofs** is filled from stadium medians, not
   measured.
 - **Home and away short-week flags overlap almost completely** (both teams are on

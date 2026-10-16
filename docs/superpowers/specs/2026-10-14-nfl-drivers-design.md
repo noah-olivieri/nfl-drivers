@@ -51,7 +51,7 @@ raw data → team ratings → game features → models → validation and import
 - Source: `nflreadr` play-by-play (`load_pbp`) and schedules (`load_schedules`) for seasons 2009–2026. 2009 is loaded only so 2010 week 1 ratings have prior-season carryover.
 - Cached to `data/cache/` as `.rds`. A cached season is reused; the current season (2026) is always re-downloaded.
 - If a download fails, stop with a clear error naming the season. Never continue on partial data.
-- Games only: regular season and playoffs, excluding games without a final score (unplayed 2026 games).
+- Games only: regular season and playoffs, excluding games without a final score (unplayed 2026 games). The forecast week's unplayed games are kept for prediction only; see `2026-10-15-upcoming-week-design.md`.
 
 ## 2. Team strength ratings (`R/team_strength.R`)
 
