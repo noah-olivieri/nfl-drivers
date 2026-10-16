@@ -28,7 +28,8 @@ run_all <- function(cache_dir = "data/cache", refresh = 2026L,
   tuning <- tune_rating_params(plays, sched, default_rating_grid(), seasons = 2010:2017)
 
   step("Computing ratings")
-  # Ratings cover every completed week plus the next unplayed week (the one to forecast).
+  # Ratings cover every completed week plus the forecast week (the rest of a week in
+  # progress, or else the next week).
   sched_rate <- rating_schedule(sched_all)
   ratings_ridge <- compute_ridge_ratings(plays, sched_rate, tuning$best, seasons)
   ratings_rolling <- compute_rolling_ratings(plays, sched_rate, seasons)
@@ -44,15 +45,20 @@ run_all <- function(cache_dir = "data/cache", refresh = 2026L,
   qb_mix_rolling <- team_qb_mix(plays, qb_ratings_rolling, sched_rate, tuning$best, seasons)
 
   step("Building features")
-  # features_ridge carries the ridge QB gap, so every ridge run is scored on the same games.
-  features_ridge <- build_features(sched, ratings_ridge, stadiums,
+  # Features cover completed games plus the forecast week's unplayed games (margin and
+  # win NA). features_ridge carries the ridge QB gap, so every ridge run is scored on
+  # the same games.
+  features_ridge <- build_features(sched_rate, ratings_ridge, stadiums,
                                    qb = list(ratings = qb_ratings_ridge, mix = qb_mix_ridge))
-  features_qb_rolling <- build_features(sched, ratings_ridge, stadiums,
+  features_qb_rolling <- build_features(sched_rate, ratings_ridge, stadiums,
                                         qb = list(ratings = qb_ratings_rolling, mix = qb_mix_rolling))
-  features_rolling <- build_features(sched, ratings_rolling, stadiums)
+  features_rolling <- build_features(sched_rate, ratings_rolling, stadiums)
+  dropped <- attr(features_ridge, "dropped")
+  upcoming_dropped <- attr(features_ridge, "dropped_upcoming")
+  missing_starters <- attr(features_ridge, "missing_starters")
 
   step("Walk-forward validation")
-  preds <- list(
+  preds_all <- list(
     base            = walk_forward(features_ridge, MODEL_SPECS$base, test_seasons),
     full_ridge      = walk_forward(features_ridge, MODEL_SPECS$full, test_seasons),
     full_rolling    = walk_forward(features_rolling, MODEL_SPECS$full, test_seasons),
@@ -62,6 +68,16 @@ run_all <- function(cache_dir = "data/cache", refresh = 2026L,
     market_qb       = walk_forward(features_ridge, MODEL_SPECS$market_qb, test_seasons),
     spread_only     = spread_benchmark(features_ridge, test_seasons)
   )
+  # Unplayed games get a prediction from every run. From here on, everything (scores,
+  # comparisons, importance, the QB verdict and what is saved) uses completed games only.
+  upcoming <- upcoming_predictions(preds_all, sched_rate)
+  preds <- lapply(preds_all, function(p) p[!is.na(p$margin), ])
+  completed <- function(f) f[!is.na(f$margin), ]
+  features_ridge <- completed(features_ridge)
+  features_qb_rolling <- completed(features_qb_rolling)
+  features_rolling <- completed(features_rolling)
+  unplayed <- is.na(sched_rate$home_score) | is.na(sched_rate$away_score)
+  forecast_season <- if (any(unplayed)) sched_rate$season[unplayed][1] else NA_integer_
   scores <- purrr::imap_dfr(preds, function(p, name) {
     dplyr::mutate(score_predictions(p), model = name, .before = 1)
   })
@@ -117,7 +133,7 @@ run_all <- function(cache_dir = "data/cache", refresh = 2026L,
   results <- list(
     created = Sys.time(),
     n_games = dplyr::count(features_ridge, season, name = "games"),
-    dropped = attr(features_ridge, "dropped"),
+    dropped = dropped,
     tuning = tuning,
     ratings_ridge = ratings_ridge,
     ratings_rolling = ratings_rolling,
@@ -158,10 +174,13 @@ run_all <- function(cache_dir = "data/cache", refresh = 2026L,
     ablation_market_qb_vars = ablation_deltas(ap_market_qb_vars),
     ablation_market_qb_vars_boot = ablation_bootstrap(ap_market_qb_vars),
     excluded_dropbacks = excluded_dropbacks,
-    missing_starters = attr(features_ridge, "missing_starters"),
+    missing_starters = missing_starters,
     starter_id_coverage = coverage,
     qb_names = qb_names,
-    qb_starters = dplyr::filter(scheduled_starters(sched_rate), !is.na(qb_id))
+    qb_starters = dplyr::filter(scheduled_starters(sched_rate), !is.na(qb_id)),
+    upcoming = upcoming,
+    upcoming_dropped = upcoming_dropped,
+    schedule_downloaded = schedule_download_time(cache_dir, forecast_season)
   )
   saveRDS(results, file.path(cache_dir, "results.rds"))
   step("Saved ", file.path(cache_dir, "results.rds"))
