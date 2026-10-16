@@ -52,14 +52,26 @@ clean_schedules <- function(sched, completed_only = TRUE) {
 }
 
 # Schedule rows that ratings are computed for: every completed game, plus the
-# games of the next week that has no completed games yet (the week to forecast).
+# unplayed games of the forecast week, the earliest week with an unplayed game
+# counting from the latest week with a completed game. A week whose Thursday game
+# is done stays the forecast week until its last game; an unplayed game in an
+# earlier week is a no-contest and is dropped.
 rating_schedule <- function(sched_all) {
   done <- !is.na(sched_all$home_score) & !is.na(sched_all$away_score)
   key <- sched_all$season * 100 + sched_all$week
   last_done <- if (any(done)) max(key[done]) else -Inf
-  upcoming <- key[!done & key > last_done]
+  upcoming <- key[!done & key >= last_done]
   next_key <- if (length(upcoming)) min(upcoming) else NA
   sched_all[done | (!is.na(next_key) & key == next_key), ]
+}
+
+# When a season's schedule was last downloaded: its cache file's modification time
+# (load_cached() writes the file right after each download). NA if there is none.
+schedule_download_time <- function(cache_dir, season) {
+  if (length(season) != 1 || is.na(season)) return(as.POSIXct(NA))
+  path <- file.path(cache_dir, sprintf("schedules_%d.rds", season))
+  if (!file.exists(path)) return(as.POSIXct(NA))
+  file.mtime(path)
 }
 
 # Normalize the team columns of a plays table to current abbreviations.
