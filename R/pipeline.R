@@ -71,6 +71,9 @@ run_all <- function(cache_dir = "data/cache", refresh = 2026L,
   # Unplayed games get a prediction from every run. From here on, everything (scores,
   # comparisons, importance, the QB verdict and what is saved) uses completed games only.
   upcoming <- upcoming_predictions(preds_all, sched_rate)
+  upcoming_feats <- upcoming_features(features_ridge, MODEL_SPECS$full_qb)
+  stopifnot(setequal(upcoming_feats$game_id,
+                     upcoming$game_id[upcoming$model == "full_qb_ridge"]))
   preds <- lapply(preds_all, function(p) p[!is.na(p$margin), ])
   completed <- function(f) f[!is.na(f$margin), ]
   features_ridge <- completed(features_ridge)
@@ -179,6 +182,7 @@ run_all <- function(cache_dir = "data/cache", refresh = 2026L,
     qb_names = qb_names,
     qb_starters = dplyr::filter(scheduled_starters(sched_rate), !is.na(qb_id)),
     upcoming = upcoming,
+    upcoming_features = upcoming_feats,
     upcoming_dropped = upcoming_dropped,
     schedule_downloaded = schedule_download_time(cache_dir, forecast_season)
   )

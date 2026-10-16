@@ -144,3 +144,18 @@ test_that("upcoming predictions are empty when every game has been played", {
   expect_equal(nrow(out), 0)
   expect_named(out, up_cols)
 })
+
+test_that("upcoming_features keeps only unplayed games and the model's columns", {
+  f <- data.frame(game_id = c("done", "next1"), season = 2026L, week = c(5L, 6L),
+                  margin = c(3, NA), win = c(1, NA), a = c(0.1, 0.2), b = c(1, 2),
+                  weather_imputed = c(0, 1), extra = 9)
+  out <- upcoming_features(f, c("a", "b"))
+  expect_equal(out$game_id, "next1")
+  expect_named(out, c("game_id", "season", "week", "a", "b", "weather_imputed"))
+  expect_equal(out$weather_imputed, 1)
+})
+
+test_that("upcoming_features errors if a model column is missing", {
+  f <- data.frame(game_id = "x", season = 2026L, week = 6L, margin = NA, weather_imputed = 0)
+  expect_error(upcoming_features(f, "a"), "undefined columns")
+})

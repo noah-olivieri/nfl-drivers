@@ -67,3 +67,10 @@ upcoming_predictions <- function(preds, sched) {
     dplyr::select(model, game_id, season, week, gameday, gametime, away_team, home_team,
                   away_qb_name, home_qb_name, spread, pred_margin, pred_win)
 }
+
+# Feature rows behind the forecast week's predictions: unplayed games only, with the
+# model's inputs and weather_imputed, so a snapshot can archive what was predicted from.
+upcoming_features <- function(features, vars) {
+  cols <- c("game_id", "season", "week", vars, "weather_imputed")
+  as.data.frame(features[is.na(features$margin), cols, drop = FALSE])
+}
