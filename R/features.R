@@ -1,5 +1,6 @@
-# Game features: one row per completed game, from the home team's view,
-# using only information known before kickoff.
+# Game features: one row per game, from the home team's view, using only information
+# known before kickoff. Unplayed games of a rated week (the forecast week) are kept
+# with margin and win NA.
 
 FEATURE_GROUPS <- list(
   strength    = c("pass_off_diff", "rush_off_diff", "pass_def_diff", "rush_def_diff"),
@@ -83,14 +84,22 @@ add_qb_adjustments <- function(games, qb) {
 
 # qb: NULL, or list(ratings = <QB ratings>, mix = <team_qb_mix() output>) to add the
 # starter adjustment (qb_adj_diff). Without it the QB columns are NA.
+# Unplayed games (either score NA) are kept, with margin and win NA, when their
+# season-week has ratings; other unplayed games are left out. Home venues, weather
+# medians and the missing-starter count come from completed games only, so adding
+# unplayed games never changes a completed game's row.
 build_features <- function(sched, ratings, stadiums, qb = NULL) {
-  flags <- qb_flags(sched)
-  homes <- team_home_venue(sched)
+  played <- !is.na(sched$home_score) & !is.na(sched$away_score)
+  rated <- paste(sched$season, sched$week) %in% paste(ratings$season, ratings$week)
+  sched <- sched[played | rated, ]
+  flags <- qb_flags(sched)   # looks back only, so later unplayed games can't move it
+  homes <- team_home_venue(sched[!is.na(sched$home_score) & !is.na(sched$away_score), ])
   st <- dplyr::select(stadiums, stadium_id, lat, lon, tz)
 
   games <- sched |>
     dplyr::filter(season %in% unique(ratings$season)) |>
     dplyr::mutate(
+      is_played = !is.na(home_score) & !is.na(away_score),
       gameday = as.Date(gameday),
       kickoff = as.POSIXct(paste(gameday, gametime), tz = "America/New_York"),
       roof = trimws(roof), surface = trimws(surface)
@@ -105,12 +114,13 @@ build_features <- function(sched, ratings, stadiums, qb = NULL) {
 
   # Fill missing outdoor weather: that stadium's median for the season, then the
   # stadium's median over all seasons, then the league's median that season.
-  # (Retractable roofs left open often have no weather recorded at all.)
+  # (Retractable roofs left open often have no weather recorded at all.) Medians
+  # come from played games only.
   fill_median <- function(df, ...) {
     df |>
       dplyr::group_by(dome, ...) |>
-      dplyr::mutate(temp = dplyr::coalesce(temp, stats::median(temp, na.rm = TRUE)),
-                    wind = dplyr::coalesce(wind, stats::median(wind, na.rm = TRUE))) |>
+      dplyr::mutate(temp = dplyr::coalesce(temp, stats::median(temp[is_played], na.rm = TRUE)),
+                    wind = dplyr::coalesce(wind, stats::median(wind[is_played], na.rm = TRUE))) |>
       dplyr::ungroup()
   }
   games <- games |>
@@ -119,12 +129,13 @@ build_features <- function(sched, ratings, stadiums, qb = NULL) {
     fill_median(stadium_id, season) |>
     fill_median(stadium_id) |>
     fill_median(season)
-  n_missing_starters <- sum(is.na(games$home_qb_id)) + sum(is.na(games$away_qb_id))
+  n_missing_starters <- sum(is.na(games$home_qb_id[games$is_played])) +
+    sum(is.na(games$away_qb_id[games$is_played]))
 
   out <- games |>
     dplyr::mutate(
       margin = home_score - away_score,
-      win = dplyr::case_when(margin > 0 ~ 1, margin < 0 ~ 0, TRUE ~ 0.5),
+      win = dplyr::case_when(margin > 0 ~ 1, margin < 0 ~ 0, margin == 0 ~ 0.5),
       home = as.numeric(location != "Neutral"),
       rest_diff = home_rest - away_rest,
       home_off_bye = as.numeric(home_rest >= 13), away_off_bye = as.numeric(away_rest >= 13),
@@ -147,11 +158,14 @@ build_features <- function(sched, ratings, stadiums, qb = NULL) {
                   home_qb_adj, away_qb_adj, qb_change_game)
 
   feature_vars <- unlist(FEATURE_GROUPS, use.names = FALSE)
-  # Without QB input the QB gap is NA by design and not required.
-  required <- c("margin", "win", if (is.null(qb)) setdiff(feature_vars, "qb_adj_diff") else feature_vars)
+  # Without QB input the QB gap is NA by design and not required. Outcomes are NA
+  # exactly for unplayed games, so they are not checked here.
+  required <- if (is.null(qb)) setdiff(feature_vars, "qb_adj_diff") else feature_vars
   complete <- stats::complete.cases(out[required])
+  unplayed <- is.na(out$margin)
   out <- out[complete, ]
-  attr(out, "dropped") <- sum(!complete)
+  attr(out, "dropped") <- sum(!complete & !unplayed)
+  attr(out, "dropped_upcoming") <- sum(!complete & unplayed)
   attr(out, "missing_starters") <- n_missing_starters
   out
 }

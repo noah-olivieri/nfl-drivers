@@ -184,3 +184,99 @@ test_that("build_features works with only the files the README says to source", 
   f <- env$build_features(toy_sched(), toy_ratings(), toy_stadiums())
   expect_equal(f$game_id, feats()$game_id)
 })
+
+# An unplayed game the week after the last toy game (KC hosts HOU in week 21), and
+# ratings that cover its week.
+upcoming_game <- function() {
+  toy_sched() |>
+    dplyr::filter(game_id == "playoff_game") |>
+    dplyr::mutate(game_id = "upcoming", week = 21L, game_type = "CON", gameday = "2021-01-24",
+                  gametime = "18:40", home_score = NA_real_, away_score = NA_real_,
+                  temp = NA_real_, wind = NA_real_)
+}
+ratings_through_21 <- function() {
+  r <- toy_ratings()
+  dplyr::bind_rows(r, dplyr::mutate(r[r$week == 20L, ], week = 21L))
+}
+qb_through_21 <- function() {
+  qb <- toy_qb()
+  week21 <- function(df) dplyr::bind_rows(df, dplyr::mutate(df[df$week == 20L, ], week = 21L))
+  list(ratings = week21(qb$ratings), mix = week21(qb$mix))
+}
+
+test_that("an unplayed game in a rated week is kept with NA outcomes", {
+  s <- dplyr::bind_rows(toy_sched(), dplyr::mutate(upcoming_game(), spread_line = NA_real_))
+  f <- build_features(s, ratings_through_21(), toy_stadiums())
+  up <- row_of(f, "upcoming")
+  expect_equal(nrow(up), 1)
+  expect_true(is.na(up$margin))
+  expect_true(is.na(up$win))    # not 0.5
+  expect_true(is.na(up$spread)) # no line yet is not a reason to drop it
+  expect_false(anyNA(up[setdiff(unlist(FEATURE_GROUPS), "qb_adj_diff")]))
+  expect_equal(c(up$temp, up$wind), c(65, 9))   # KAN00 2020 medians from played games
+  expect_equal(attr(f, "dropped"), 0)
+  expect_equal(attr(f, "dropped_upcoming"), 0)
+})
+
+test_that("completed games' features don't change when unplayed games are added", {
+  jax_london <- function(id) {
+    dplyr::mutate(upcoming_game(), game_id = id, home_team = "JAX", away_team = "HOU",
+                  stadium_id = "LON00", home_qb_id = "minshew", away_qb_id = "watson")
+  }
+  extra <- dplyr::bind_rows(
+    dplyr::mutate(upcoming_game(), temp = 5, wind = 40),   # recorded weather must not feed the medians
+    # Two unplayed JAX "home" games in London would make LON00 JAX's most-used home
+    # stadium if unplayed games counted, moving the travel for JAX's road games.
+    jax_london("jax_lon1"), jax_london("jax_lon2")
+  )
+  base <- build_features(toy_sched(), ratings_through_21(), toy_stadiums())
+  with_up <- build_features(dplyr::bind_rows(toy_sched(), extra), ratings_through_21(), toy_stadiums())
+  done <- with_up[!is.na(with_up$margin), ]
+  expect_equal(nrow(with_up), nrow(base) + 3)
+  expect_equal(done$game_id, base$game_id)
+  for (v in names(base)) expect_equal(done[[v]], base[[v]], info = v)
+})
+
+test_that("an unplayed game in a week without ratings is left out, not counted", {
+  s <- dplyr::bind_rows(toy_sched(), upcoming_game())
+  f <- build_features(s, toy_ratings(), toy_stadiums())   # no week-21 ratings
+  expect_false("upcoming" %in% f$game_id)
+  expect_equal(attr(f, "dropped"), 0)
+  expect_equal(attr(f, "dropped_upcoming"), 0)
+})
+
+test_that("an unplayed game missing a required feature is counted separately", {
+  s <- dplyr::bind_rows(toy_sched(), dplyr::mutate(upcoming_game(), home_rest = NA_integer_))
+  f <- build_features(s, ratings_through_21(), toy_stadiums())
+  expect_false("upcoming" %in% f$game_id)
+  expect_equal(attr(f, "dropped"), 0)
+  expect_equal(attr(f, "dropped_upcoming"), 1)
+})
+
+test_that("missing starters are counted over completed games only", {
+  s <- dplyr::bind_rows(toy_sched(), dplyr::mutate(upcoming_game(), home_qb_id = NA_character_))
+  f <- build_features(s, ratings_through_21(), toy_stadiums())
+  expect_equal(attr(f, "missing_starters"), 1)   # tie_game only
+})
+
+test_that("an upcoming game with no listed starter is kept with adjustment 0", {
+  s <- dplyr::bind_rows(toy_sched(), dplyr::mutate(upcoming_game(), away_qb_id = NA_character_))
+  f <- build_features(s, ratings_through_21(), toy_stadiums(), qb = qb_through_21())
+  up <- row_of(f, "upcoming")
+  expect_equal(nrow(up), 1)
+  expect_equal(up$away_qb_adj, 0)
+  expect_equal(attr(f, "dropped_upcoming"), 0)
+})
+
+test_that("an upcoming week-1 game uses last season's home stadium for travel", {
+  wk1 <- toy_sched()[1, ] |>
+    dplyr::mutate(game_id = "2021_wk1", season = 2021L, week = 1L, gameday = "2021-09-12",
+                  away_team = "JAX", away_qb_id = "minshew",
+                  home_score = NA_real_, away_score = NA_real_)
+  s <- dplyr::bind_rows(toy_sched(), wk1)
+  r <- dplyr::bind_rows(toy_ratings(), dplyr::mutate(toy_ratings()[toy_ratings()$week == 1, ], season = 2021L))
+  f <- build_features(s, r, toy_stadiums())
+  expect_equal(attr(f, "dropped_upcoming"), 0)
+  expect_equal(row_of(f, "2021_wk1")$away_travel_miles,
+               haversine_miles(30.32, -81.64, 39.05, -94.48))   # JAX00 -> KAN00
+})
