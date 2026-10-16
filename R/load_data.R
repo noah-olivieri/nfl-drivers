@@ -74,6 +74,19 @@ schedule_download_time <- function(cache_dir, season) {
   file.mtime(path)
 }
 
+# The code a run used: HEAD's SHA and whether tracked or untracked files differ from it
+# (ignored files such as data/cache/ do not count). NA for both outside a git repo.
+code_state <- function(dir = ".") {
+  git <- function(...) {
+    out <- suppressWarnings(system2("git", c("-C", dir, ...), stdout = TRUE, stderr = FALSE))
+    if (!is.null(attr(out, "status"))) NULL else out
+  }
+  sha <- git("rev-parse", "HEAD")
+  status <- git("status", "--porcelain")
+  if (is.null(sha) || is.null(status)) return(list(sha = NA_character_, dirty = NA))
+  list(sha = sha, dirty = length(status) > 0)
+}
+
 # Normalize the team columns of a plays table to current abbreviations.
 clean_plays_teams <- function(df) {
   dplyr::mutate(df, posteam = clean_abbr(posteam), defteam = clean_abbr(defteam),

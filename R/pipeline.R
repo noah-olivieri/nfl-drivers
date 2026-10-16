@@ -5,6 +5,7 @@
 run_all <- function(cache_dir = "data/cache", refresh = 2026L,
                     stadiums_path = "data/stadiums.csv") {
   step <- function(...) message(format(Sys.time(), "%H:%M:%S "), ...)
+  code <- code_state()   # recorded so a snapshot can check which code made these results
   seasons <- 2010:2026
   test_seasons <- 2018:2026
   verdict_seasons <- 2018:2025   # 2026 is a live check only
@@ -135,6 +136,8 @@ run_all <- function(cache_dir = "data/cache", refresh = 2026L,
 
   results <- list(
     created = Sys.time(),
+    code_sha = code$sha,
+    code_dirty = code$dirty,
     n_games = dplyr::count(features_ridge, season, name = "games"),
     dropped = dropped,
     tuning = tuning,

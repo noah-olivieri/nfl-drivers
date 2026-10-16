@@ -126,3 +126,25 @@ test_that("clean_plays credits dropbacks, including scrambles, to the QB's id", 
   expect_equal(out$qb_id, c("qb1", "qb1", NA))
   expect_equal(out$play_type, c("pass", "run", "run"))   # scrambles stay "run" for team ratings
 })
+
+test_that("code_state reports HEAD's SHA and whether the tree has uncommitted changes", {
+  dir <- withr::local_tempdir()
+  git <- function(...) system2("git", c("-C", dir, ...), stdout = TRUE, stderr = TRUE)
+  git("init", "-q")
+  git("config", "user.email", "t@example.com")
+  git("config", "user.name", "t")
+  writeLines("a", file.path(dir, "a.R"))
+  git("add", "a.R")
+  git("commit", "-q", "-m", "init")
+  st <- code_state(dir)
+  expect_equal(st$sha, git("rev-parse", "HEAD"))
+  expect_false(st$dirty)
+  writeLines("b", file.path(dir, "a.R"))
+  expect_true(code_state(dir)$dirty)
+})
+
+test_that("code_state is NA outside a git repo", {
+  st <- code_state(withr::local_tempdir())
+  expect_true(is.na(st$sha))
+  expect_true(is.na(st$dirty))
+})
