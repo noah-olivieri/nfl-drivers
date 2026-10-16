@@ -15,7 +15,7 @@ test_that("columns match the spec's feature table", {
   expect_named(feats(), c("game_id", "season", "week", "gameday", "margin", "win",
                           FEATURE_GROUPS$strength, FEATURE_GROUPS$situational,
                           FEATURE_GROUPS$qb, FEATURE_GROUPS$environment, "spread",
-                          "home_qb_adj", "away_qb_adj", "qb_change_game"),
+                          "home_qb_adj", "away_qb_adj", "qb_change_game", "weather_imputed"),
                ignore.order = TRUE)
 })
 
@@ -279,4 +279,13 @@ test_that("an upcoming week-1 game uses last season's home stadium for travel", 
   expect_equal(attr(f, "dropped_upcoming"), 0)
   expect_equal(row_of(f, "2021_wk1")$away_travel_miles,
                haversine_miles(30.32, -81.64, 39.05, -94.48))   # JAX00 -> KAN00
+})
+
+test_that("weather_imputed marks games whose temp or wind was missing before filling", {
+  s <- toy_sched()
+  f <- build_features(s, toy_ratings(), toy_stadiums())
+  src <- s[match(f$game_id, s$game_id), ]
+  expect_equal(f$weather_imputed, as.numeric(is.na(src$temp) | is.na(src$wind)))
+  expect_equal(row_of(f, "g2")$weather_imputed, 1)   # toy g2 has no weather recorded
+  expect_equal(row_of(f, "g1")$weather_imputed, 0)
 })

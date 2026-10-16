@@ -125,7 +125,9 @@ build_features <- function(sched, ratings, stadiums, qb = NULL) {
   }
   games <- games |>
     dplyr::mutate(dome = as.numeric(roof %in% c("dome", "closed")),
-                  temp = as.numeric(temp), wind = as.numeric(wind)) |>
+                  temp = as.numeric(temp), wind = as.numeric(wind),
+                  # Set before filling, so the archive shows which values are medians.
+                  weather_imputed = as.numeric(is.na(temp) | is.na(wind))) |>
     fill_median(stadium_id, season) |>
     fill_median(stadium_id) |>
     fill_median(season)
@@ -155,7 +157,7 @@ build_features <- function(sched, ratings, stadiums, qb = NULL) {
     add_qb_adjustments(qb) |>
     dplyr::select(game_id, season, week, gameday, margin, win,
                   dplyr::all_of(unlist(FEATURE_GROUPS, use.names = FALSE)), spread,
-                  home_qb_adj, away_qb_adj, qb_change_game)
+                  home_qb_adj, away_qb_adj, qb_change_game, weather_imputed)
 
   feature_vars <- unlist(FEATURE_GROUPS, use.names = FALSE)
   # Without QB input the QB gap is NA by design and not required. Outcomes are NA
