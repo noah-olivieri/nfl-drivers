@@ -110,3 +110,37 @@ test_that("scoring and calibration ignore games without an outcome", {
   expect_equal(score_predictions(dplyr::bind_rows(p, up)), score_predictions(p))
   expect_equal(calibration_table(dplyr::bind_rows(p, up)), calibration_table(p))
 })
+
+up_sched <- function() {
+  tibble::tibble(game_id = c("done", "next1", "next2"), gameday = "2026-10-18",
+                 gametime = c("13:00", "13:00", "20:20"), away_team = c("A", "C", "E"),
+                 home_team = c("B", "D", "F"), away_qb_name = c("qa", "qc", NA),
+                 home_qb_name = c("qb", "qd", "qf"), spread_line = c(3, -1.5, NA))
+}
+up_preds <- function() {
+  tibble::tibble(game_id = c("done", "next1", "next2"), season = 2026L, week = 6L,
+                 margin = c(7, NA, NA), win = c(1, NA, NA),
+                 pred_margin = c(2, 1, NA), pred_win = c(0.6, 0.55, NA))   # next2 has no line yet
+}
+up_cols <- c("model", "game_id", "season", "week", "gameday", "gametime", "away_team", "home_team",
+             "away_qb_name", "home_qb_name", "spread", "pred_margin", "pred_win")
+
+test_that("upcoming predictions are the unplayed games, one row per run, with schedule info", {
+  preds <- list(m1 = up_preds(), m2 = dplyr::mutate(up_preds(), pred_win = pred_win + 0.1))
+  out <- upcoming_predictions(preds, up_sched())
+  expect_named(out, up_cols)
+  expect_equal(nrow(out), 4)
+  expect_setequal(out$game_id, c("next1", "next2"))
+  expect_equal(out$pred_win[out$model == "m2" & out$game_id == "next1"], 0.65)
+  expect_equal(out$home_team[out$game_id == "next1"], c("D", "D"))
+  expect_equal(out$spread[out$game_id == "next1"], c(-1.5, -1.5))
+  expect_true(all(is.na(out$away_qb_name[out$game_id == "next2"])))   # starter not listed
+  expect_true(all(is.na(out$pred_win[out$game_id == "next2"])))       # kept, not dropped
+})
+
+test_that("upcoming predictions are empty when every game has been played", {
+  p <- up_preds()[1, ]
+  out <- upcoming_predictions(list(m1 = p), up_sched())
+  expect_equal(nrow(out), 0)
+  expect_named(out, up_cols)
+})

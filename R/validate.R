@@ -51,3 +51,19 @@ calibration_table <- function(preds, bins = 10) {
     dplyr::summarise(mean_pred = mean(pred_win), actual_rate = mean(win), n = dplyr::n(),
                      .groups = "drop")
 }
+
+# Predictions for games not yet played (margin NA), one row per run per game, with
+# the schedule's teams, kickoff, projected starters and current line. pred_margin and
+# pred_win are from the home team's view. preds: named list of walk_forward() /
+# spread_benchmark() outputs.
+upcoming_predictions <- function(preds, sched) {
+  info <- dplyr::select(sched, game_id, gameday, gametime, away_team, home_team,
+                        away_qb_name, home_qb_name, spread = spread_line)
+  purrr::imap_dfr(preds, function(p, name) {
+    p <- p[is.na(p$margin), c("game_id", "season", "week", "pred_margin", "pred_win")]
+    dplyr::mutate(p, model = name, .before = 1)
+  }) |>
+    dplyr::left_join(info, by = "game_id") |>
+    dplyr::select(model, game_id, season, week, gameday, gametime, away_team, home_team,
+                  away_qb_name, home_qb_name, spread, pred_margin, pred_win)
+}
