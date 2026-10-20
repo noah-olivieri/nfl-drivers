@@ -11,7 +11,10 @@ feature functions are built to be reused in the Forecast Lab.
 
 ## Run it
 
-Requires R (4.3+) and [Quarto](https://quarto.org).
+Requires R (4.5.2, pinned in `renv.lock`) and [Quarto](https://quarto.org). Package versions
+are pinned with renv. On a fresh checkout run `Rscript -e 'renv::restore()'` once before
+`Rscript run.R`. `jsonlite` is listed for forecast-lab's `jobs/export_drivers.R`, which runs
+inside this project.
 
 ```r
 install.packages(c("nflreadr", "dplyr", "tidyr", "purrr", "tibble", "readr",

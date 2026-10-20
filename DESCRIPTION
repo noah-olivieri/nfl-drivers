@@ -16,7 +16,8 @@ Imports:
     Matrix,
     lubridate,
     ggplot2,
-    withr
+    withr,
+    jsonlite
 Suggests:
     testthat (>= 3.0.0),
     ggrepel
